@@ -1,0 +1,9 @@
+target/
+.mvn/apache-maven-*/
+.mvn/*.tar.gz*
+.idea/
+*.iml
+.DS_Store
+test-workspace/secrets/*.yaml
+test-workspace/results/
+!.mvn/wrapper/maven-wrapper.properties

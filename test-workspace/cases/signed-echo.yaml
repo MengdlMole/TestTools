@@ -1,0 +1,22 @@
+name: 签名请求和响应验签示例
+environment: local
+
+steps:
+  - name: 调用签名 Echo Mock
+    operationId: signedEcho
+    method: POST
+    path: /signed/echo
+    bodyFile: fixtures/echo-request.json
+    extract:
+      echoedMessage: $.echo.message
+    assertions:
+      - type: status
+        operator: equals
+        expected: 200
+      - type: jsonPath
+        path: $.echo.message
+        operator: contains
+        expected: hello
+      - type: responseTime
+        operator: lessThan
+        expected: 2000

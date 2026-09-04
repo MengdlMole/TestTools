@@ -1,0 +1,14 @@
+name: 无签名健康检查示例
+environment: local
+
+steps:
+  - name: 调用健康检查 Mock
+    operationId: health
+    method: GET
+    path: /health
+    assertions:
+      - type: status
+        expected: 200
+      - type: jsonPath
+        path: $.status
+        expected: UP

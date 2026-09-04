@@ -1,0 +1,7 @@
+name: local
+baseUrl: http://127.0.0.1:19090
+secretRef: demo
+defaultSecurityHandler: none
+
+variables:
+  tenantId: local-tenant

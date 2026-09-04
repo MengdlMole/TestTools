@@ -1,0 +1,7 @@
+name: 本地冒烟测试
+stopOnFailure: true
+repeat: 1
+
+cases:
+  - plain-health
+  - signed-echo

@@ -1,0 +1,14 @@
+defaultEnvironment: local
+mockPort: 19090
+
+variables:
+  clientName: local-test-tools
+
+# 路由优先级：步骤显式 securityHandler > 第一条匹配规则 > 环境默认值。
+# operationId 最稳定，pathPattern 支持 *（单段）和 **（多段）。
+securityRules:
+  - operationId: signedEcho
+    handler: demoHmacSha256
+  - method: POST
+    pathPattern: /signed/**
+    handler: demoHmacSha256

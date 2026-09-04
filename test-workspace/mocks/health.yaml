@@ -1,0 +1,12 @@
+name: 健康检查
+enabled: true
+priority: 20
+
+request:
+  method: GET
+  path: /health
+
+response:
+  status: 200
+  body:
+    status: UP
