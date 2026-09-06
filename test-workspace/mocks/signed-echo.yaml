@@ -1,4 +1,5 @@
 name: 签名 Echo
+protocol: http
 enabled: true
 priority: 10
 securityHandler: demoHmacSha256
@@ -16,3 +17,21 @@ response:
     echo:
       message: hello from local-test-tools
       tenantId: local-tenant
+
+afterResponse:
+  - name: echo-completed-callback
+    protocol: http
+    delayMs: 50
+    timeoutMs: 3000
+    securityHandler: none
+    retry:
+      maxAttempts: 3
+      intervalMs: 100
+    request:
+      method: POST
+      url: http://127.0.0.1:19090/callback/received
+      body:
+        event: ECHO_COMPLETED
+        sourceMock: "${mock.name}"
+        requestPath: "${request.path}"
+        callbackId: "${callback.id}"

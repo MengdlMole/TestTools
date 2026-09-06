@@ -1,4 +1,5 @@
 name: 健康检查
+protocol: http
 enabled: true
 priority: 20
 
@@ -9,4 +10,4 @@ request:
 response:
   status: 200
   body:
-    status: UP
+      status: UP

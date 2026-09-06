@@ -3,6 +3,7 @@ environment: local
 
 steps:
   - name: 调用健康检查 Mock
+    protocol: http
     operationId: health
     method: GET
     path: /health

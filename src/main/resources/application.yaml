@@ -1,9 +1,0 @@
-spring:
-  application:
-    name: api-test-tools
-  jackson:
-    default-property-inclusion: non_null
-server:
-  port: ${TEST_TOOLS_PORT:18080}
-test-tools:
-  workspace: ${TEST_TOOLS_WORKSPACE:./test-workspace}
