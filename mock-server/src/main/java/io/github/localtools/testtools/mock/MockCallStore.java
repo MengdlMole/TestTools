@@ -1,6 +1,7 @@
 package io.github.localtools.testtools.mock;
 
 import org.springframework.stereotype.Component;
+import io.github.localtools.testtools.http.SensitiveDataMasker;
 
 import java.time.Instant;
 import java.util.ArrayDeque;
@@ -14,7 +15,7 @@ class MockCallStore {
     private final ArrayDeque<MockCall> calls = new ArrayDeque<>();
 
     synchronized void record(String method, String path, int status, String matchedMock) {
-        calls.addFirst(new MockCall(Instant.now().toString(), method, path, status, matchedMock));
+        calls.addFirst(new MockCall(Instant.now().toString(), method, SensitiveDataMasker.maskUri(path), status, matchedMock));
         while (calls.size() > 100) calls.removeLast();
     }
 

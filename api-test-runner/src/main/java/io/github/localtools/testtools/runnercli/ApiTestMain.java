@@ -28,9 +28,7 @@ public final class ApiTestMain {
                 default -> throw new IllegalArgumentException("Unknown argument: " + args[i]);
             }
         }
-        if (RunnerSettings.caseName != null && RunnerSettings.suiteName != null) {
-            throw new IllegalArgumentException("Use either --case or --suite, not both");
-        }
+        RunnerSettings.validateSelection();
     }
 
     private static String value(String[] args, int index, String option) {

@@ -56,17 +56,20 @@ class HttpCallbackDispatcher {
 
     void submit(CallbackTask task) {
         AfterResponseDefinition definition = task.definition();
-        requireHttp(definition.protocol());
-        if (definition.request() == null) throw new IllegalArgumentException("afterResponse.request is required");
-
         String id = UUID.randomUUID().toString();
         String resultFile = "callbacks/" + LocalDate.now() + "/" + TIME.format(LocalDateTime.now())
                 + "-" + safeName(definition.name()) + "-" + id + ".json";
         CallbackExecution pending = new CallbackExecution(id, text(definition.name(), "callback"), task.mockName(),
                 "PENDING", 0, null, null, null, null, resultFile);
         put(pending);
-        long delay = definition.delayMs() == null ? 0 : Math.max(0, definition.delayMs());
-        scheduler.schedule(() -> execute(task, pending), Instant.now().plusMillis(delay));
+        try {
+            requireHttp(definition.protocol());
+            if (definition.request() == null) throw new IllegalArgumentException("afterResponse.request is required");
+            long delay = definition.delayMs() == null ? 0 : Math.max(0, definition.delayMs());
+            scheduler.schedule(() -> execute(task, pending), Instant.now().plusMillis(delay));
+        } catch (RuntimeException error) {
+            complete(pending, "FAILED", 0, null, message(error));
+        }
     }
 
     synchronized List<CallbackExecution> recent() {
@@ -98,7 +101,7 @@ class HttpCallbackDispatcher {
                 }
                 errorMessage = result.error();
             } catch (Exception error) {
-                errorMessage = error.getMessage() == null ? error.getClass().getName() : error.getMessage();
+                errorMessage = message(error);
             }
             if (attempt < maxAttempts && !sleep(interval)) break;
         }
@@ -167,6 +170,9 @@ class HttpCallbackDispatcher {
         }
     }
     private String text(String value, String fallback) { return value == null || value.isBlank() ? fallback : value; }
+    private String message(Throwable error) {
+        return error.getMessage() == null ? error.getClass().getName() : error.getMessage();
+    }
     private String safeName(String value) {
         String safe = text(value, "callback").replaceAll("[^a-zA-Z0-9_-]", "-");
         return safe.length() > 50 ? safe.substring(0, 50) : safe;

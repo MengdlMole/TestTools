@@ -23,6 +23,7 @@ public class FileDrivenApiTest {
 
     @DataProvider(name = "yamlCases")
     public Object[][] yamlCases() {
+        RunnerSettings.validateSelection();
         runtime = TestToolsRuntime.open(RunnerSettings.workspace);
         List<CaseInvocation> cases = selectedCases();
         totalCases = cases.size();

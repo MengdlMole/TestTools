@@ -29,7 +29,7 @@ public class WorkspaceService {
     public WorkspaceService(Path root, ObjectMapper jsonMapper) {
         this.root = root.toAbsolutePath().normalize();
         this.yamlMapper = new ObjectMapper(new YAMLFactory()).findAndRegisterModules()
-                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true);
         this.jsonMapper = jsonMapper;
     }
 
@@ -37,22 +37,22 @@ public class WorkspaceService {
     public WorkspaceConfig config() { return readYaml(root.resolve("workspace.yaml"), WorkspaceConfig.class); }
 
     public EnvironmentConfig environment(String name) {
-        return readYaml(root.resolve("environments").resolve(safeName(name) + ".yaml"), EnvironmentConfig.class);
+        return readYaml(resolveYaml("environments", name), EnvironmentConfig.class);
     }
 
     public TestCase testCase(String name) {
-        return readYaml(root.resolve("cases").resolve(safeName(name) + ".yaml"), TestCase.class);
+        return readYaml(resolveYaml("cases", name), TestCase.class);
     }
 
     public List<String> caseNames() { return yamlNames(root.resolve("cases")); }
     public List<String> suiteNames() { return yamlNames(root.resolve("suites")); }
 
     public TestSuite testSuite(String name) {
-        return readYaml(root.resolve("suites").resolve(safeName(name) + ".yaml"), TestSuite.class);
+        return readYaml(resolveYaml("suites", name), TestSuite.class);
     }
 
     public String caseYaml(String name) {
-        return readText(root.resolve("cases").resolve(safeName(name) + ".yaml"));
+        return readText(resolveYaml("cases", name));
     }
 
     public synchronized TestCase saveCaseYaml(String name, String yaml) {
@@ -69,7 +69,7 @@ public class WorkspaceService {
     }
 
     public String suiteYaml(String name) {
-        return readText(root.resolve("suites").resolve(safeName(name) + ".yaml"));
+        return readText(resolveYaml("suites", name));
     }
 
     public synchronized TestSuite saveSuiteYaml(String name, String yaml) {
@@ -87,7 +87,7 @@ public class WorkspaceService {
 
     public List<MockDefinition> mocks() {
         return yamlNames(root.resolve("mocks")).stream()
-                .map(name -> readYaml(root.resolve("mocks").resolve(name + ".yaml"), MockDefinition.class))
+                .map(name -> readYaml(resolveYaml("mocks", name), MockDefinition.class))
                 .sorted(Comparator.comparing(mock -> mock.priority() == null ? 100 : mock.priority()))
                 .toList();
     }
@@ -188,6 +188,7 @@ public class WorkspaceService {
                     .map(path -> path.getFileName().toString())
                     .filter(name -> name.endsWith(".yaml") || name.endsWith(".yml"))
                     .map(name -> name.substring(0, name.lastIndexOf('.')))
+                    .distinct()
                     .sorted()
                     .toList();
         } catch (IOException e) {
@@ -200,5 +201,13 @@ public class WorkspaceService {
             throw new IllegalArgumentException("Invalid file name");
         }
         return name;
+    }
+
+    private Path resolveYaml(String directory, String name) {
+        String safe = safeName(name);
+        Path yaml = root.resolve(directory).resolve(safe + ".yaml");
+        if (Files.isRegularFile(yaml)) return yaml;
+        Path yml = root.resolve(directory).resolve(safe + ".yml");
+        return Files.isRegularFile(yml) ? yml : yaml;
     }
 }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.jayway.jsonpath.JsonPath;
 import io.github.localtools.testtools.http.HttpExecutor;
 import io.github.localtools.testtools.http.HttpModels.MutableRequest;
+import io.github.localtools.testtools.http.SensitiveDataMasker;
 import io.github.localtools.testtools.runner.RunModels.AssertionResult;
 import io.github.localtools.testtools.runner.RunModels.CaseResult;
 import io.github.localtools.testtools.runner.RunModels.ErrorDetail;
@@ -58,9 +59,11 @@ public class TestCaseRunner {
 
         for (TestStep step : testCase.steps()) {
             MutableRequest request = null;
+            String handlerId = step.securityHandler();
             try {
                 requireHttp(step.protocol(), "case step " + step.name());
                 HttpSecurityHandler handler = securityHandlers.resolve(step, config, environment.defaultSecurityHandler());
+                handlerId = handler.id();
                 request = createRequest(environment, step, values);
                 handler.signRequest(signContext, request);
                 HttpExecutor.Exchange exchange = http.execute(request);
@@ -71,15 +74,15 @@ public class TestCaseRunner {
                 if (stepSuccess) extract(step, exchange.response().bodyText(), values);
                 signContext = new SignContext(values, secrets);
                 stepResults.add(new StepResult(step.name(), stepSuccess, handler.id(), request.method(),
-                        request.uri().toString(), mask(request.headers()), request.bodyText(),
+                        SensitiveDataMasker.maskUri(request.uri()).toString(), mask(request.headers()), request.bodyText(),
                         exchange.response().status(), flatten(exchange.response().headers()), exchange.response().bodyText(),
                         exchange.response().durationMs(), verification.message(), assertionResults, null));
                 success &= stepSuccess;
                 if (!stepSuccess) break;
             } catch (Exception error) {
-                stepResults.add(new StepResult(step.name(), false, step.securityHandler(),
+                stepResults.add(new StepResult(step.name(), false, handlerId,
                         request == null ? step.method() : request.method(),
-                        request == null ? step.path() : request.uri().toString(),
+                        request == null ? step.path() : SensitiveDataMasker.maskUri(request.uri()).toString(),
                         request == null ? Map.of() : mask(request.headers()),
                         request == null ? "" : request.bodyText(), 0, Map.of(), "", 0,
                         "not verified", List.of(), ErrorDetail.from(error)));
@@ -138,14 +141,7 @@ public class TestCaseRunner {
     private void putAll(Map<String, String> target, Map<String, String> source) { if (source != null) target.putAll(source); }
 
     private Map<String, String> mask(Map<String, String> headers) {
-        Map<String, String> result = new LinkedHashMap<>(headers);
-        result.replaceAll((key, value) -> isSensitive(key) ? "***" : value);
-        return result;
-    }
-    private boolean isSensitive(String key) {
-        String value = key.toLowerCase();
-        return value.contains("authorization") || value.contains("cookie") || value.contains("secret")
-                || value.contains("signature") || value.contains("api-key");
+        return SensitiveDataMasker.maskHeaders(headers);
     }
     private Map<String, String> flatten(Map<String, List<String>> headers) {
         Map<String, String> result = new LinkedHashMap<>();

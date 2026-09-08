@@ -39,7 +39,8 @@ public class HttpExecutor {
                     response.statusCode(), response.headers().map(), response.body(), duration);
             return new Exchange(requestSnapshot, responseSnapshot);
         } catch (Exception e) {
-            throw new HttpExecutionException("Request failed: " + request.method() + " " + request.uri(), e);
+            throw new HttpExecutionException("Request failed: " + request.method() + " "
+                    + SensitiveDataMasker.maskUri(request.uri()), e);
         }
     }
 

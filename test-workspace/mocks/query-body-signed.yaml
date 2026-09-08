@@ -1,0 +1,18 @@
+name: Query + Body 签名示例
+protocol: http
+enabled: true
+priority: 10
+securityHandler: queryBodyHmacSha256
+
+request:
+  method: POST
+  path: /signed/query-body
+
+response:
+  status: 200
+  headers:
+    Content-Type: application/json
+  body:
+    success: true
+    algorithm: HMAC-SHA256
+    signData: sortedRawQueryPlusExactBody

@@ -2,6 +2,8 @@ package io.github.localtools.testtools.runner;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -29,10 +31,17 @@ public class VariableResolver {
 
     public JsonNode resolve(JsonNode input, Map<String, String> variables) {
         if (input == null) return null;
-        try {
-            return mapper.readTree(resolve(mapper.writeValueAsString(input), variables));
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Cannot resolve JSON variables", e);
+        if (input.isTextual()) return mapper.getNodeFactory().textNode(resolve(input.textValue(), variables));
+        if (input.isObject()) {
+            ObjectNode result = mapper.createObjectNode();
+            input.properties().forEach(entry -> result.set(entry.getKey(), resolve(entry.getValue(), variables)));
+            return result;
         }
+        if (input.isArray()) {
+            ArrayNode result = mapper.createArrayNode();
+            input.forEach(item -> result.add(resolve(item, variables)));
+            return result;
+        }
+        return input.deepCopy();
     }
 }

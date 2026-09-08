@@ -52,6 +52,9 @@ class HttpMockEngine {
                 .findFirst().orElse(null);
         if (mock == null) return result(request, 404, "No mock matched",
                 jsonError("No mock matched"), List.of());
+        if (mock.response() == null) {
+            throw new IllegalArgumentException("Mock '" + mock.name() + "' must define response");
+        }
 
         SignContext context = signContext();
         HttpSecurityHandler handler = handlers.byId(text(mock.securityHandler(), "none"));
@@ -80,10 +83,7 @@ class HttpMockEngine {
 
     private boolean isHttp(MockDefinition mock) {
         String protocol = text(mock.protocol(), "http");
-        if (!"http".equalsIgnoreCase(protocol)) {
-            throw new IllegalArgumentException("Unsupported mock protocol '" + protocol + "'; only http is implemented");
-        }
-        return !Boolean.FALSE.equals(mock.enabled());
+        return "http".equalsIgnoreCase(protocol) && !Boolean.FALSE.equals(mock.enabled());
     }
 
     private boolean matches(MockDefinition mock, HttpServletRequest servletRequest, RequestSnapshot request) {
