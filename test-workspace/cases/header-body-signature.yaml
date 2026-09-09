@@ -1,0 +1,19 @@
+name: Header 与 JSON 字段组装签名
+environment: local
+
+steps:
+  - name: 按指定字段和顺序签名
+    protocol: http
+    method: POST
+    path: /signed/header-body
+    securityHandler: signedHeaderBodyApi
+    headers:
+      tranId: "111"
+      timestamp: "222"
+    globalBodyFile: header-body-request.json
+    assertions:
+      - type: status
+        expected: 200
+      - type: jsonPath
+        path: $.canonical
+        expected: tranId111timestamp222name333

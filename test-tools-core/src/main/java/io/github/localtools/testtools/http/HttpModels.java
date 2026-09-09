@@ -25,7 +25,10 @@ public final class HttpModels {
         public URI uri() { return uri; }
         public void uri(URI uri) { this.uri = uri; }
         public Map<String, String> headers() { return headers; }
-        public void header(String name, String value) { headers.put(name, value); }
+        public void header(String name, String value) {
+            headers.keySet().removeIf(key -> key.equalsIgnoreCase(name));
+            headers.put(name, value);
+        }
         public byte[] body() { return body; }
         public String bodyText() { return new String(body, StandardCharsets.UTF_8); }
         public void body(byte[] body) { this.body = body == null ? new byte[0] : body; }
@@ -44,7 +47,10 @@ public final class HttpModels {
         public int status() { return status; }
         public void status(int status) { this.status = status; }
         public Map<String, String> headers() { return headers; }
-        public void header(String name, String value) { headers.put(name, value); }
+        public void header(String name, String value) {
+            headers.keySet().removeIf(key -> key.equalsIgnoreCase(name));
+            headers.put(name, value);
+        }
         public byte[] body() { return body; }
         public String bodyText() { return new String(body, StandardCharsets.UTF_8); }
         public void body(byte[] body) { this.body = body == null ? new byte[0] : body; }

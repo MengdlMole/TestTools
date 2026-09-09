@@ -38,7 +38,7 @@ class SecurityHandlerRegistryTest {
 
     private TestStep step(String operationId, String method, String path, String handler) {
         return new TestStep("step", operationId, "http", method, path, Map.of(), Map.of(),
-                null, null, handler, Map.of(), List.of());
+                null, null, null, null, handler, Map.of(), List.of());
     }
 
     private record NamedHandler(String id) implements HttpSecurityHandler {}

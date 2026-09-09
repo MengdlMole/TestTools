@@ -38,4 +38,30 @@ class WorkspaceServiceTest {
 
         assertThrows(WorkspaceException.class, () -> new WorkspaceService(root).config());
     }
+
+    @Test
+    void resolvesGlobalAndCaseOwnedJsonFixturesAndRejectsTraversal() throws Exception {
+        Files.createDirectories(root.resolve("fixtures/global"));
+        Files.createDirectories(root.resolve("cases/create-order/fixtures"));
+        Files.writeString(root.resolve("fixtures/global/common.json"), "{\"scope\":\"global\"}");
+        Files.writeString(root.resolve("cases/create-order/fixtures/request.json"), "{\"scope\":\"case\"}");
+        WorkspaceService workspace = new WorkspaceService(root);
+
+        assertEquals("global", workspace.jsonFile(workspace.globalJsonFile("common.json")).path("scope").asText());
+        assertEquals("case", workspace.jsonFile(
+                workspace.caseJsonFile("create-order", "request.json")).path("scope").asText());
+        assertThrows(IllegalArgumentException.class, () -> workspace.globalJsonFile("../secret.json"));
+        assertThrows(IllegalArgumentException.class, () -> workspace.caseJsonFile("create-order", "../other.json"));
+    }
+
+    @Test
+    void rejectsJsonFixtureDirectorySymlinkedOutsideWorkspace(@TempDir Path outside) throws Exception {
+        Files.writeString(outside.resolve("request.json"), "{}");
+        Files.createDirectories(root.resolve("fixtures"));
+        Files.createSymbolicLink(root.resolve("fixtures/global"), outside);
+
+        WorkspaceService workspace = new WorkspaceService(root);
+
+        assertThrows(IllegalArgumentException.class, () -> workspace.globalJsonFile("request.json"));
+    }
 }

@@ -64,7 +64,7 @@ public class TestCaseRunner {
                 requireHttp(step.protocol(), "case step " + step.name());
                 HttpSecurityHandler handler = securityHandlers.resolve(step, config, environment.defaultSecurityHandler());
                 handlerId = handler.id();
-                request = createRequest(environment, step, values);
+                request = createRequest(caseName, environment, step, values);
                 handler.signRequest(signContext, request);
                 HttpExecutor.Exchange exchange = http.execute(request);
                 VerificationResult verification = handler.verifyResponse(signContext, exchange.request(), exchange.response());
@@ -94,7 +94,8 @@ public class TestCaseRunner {
                 Duration.ofNanos(System.nanoTime() - started).toMillis(), Map.copyOf(values), stepResults, null);
     }
 
-    private MutableRequest createRequest(EnvironmentConfig environment, TestStep step, Map<String, String> values) {
+    private MutableRequest createRequest(String caseName, EnvironmentConfig environment,
+                                         TestStep step, Map<String, String> values) {
         String path = variables.resolve(step.path(), values);
         StringBuilder url = new StringBuilder(environment.baseUrl()).append(path);
         if (step.query() != null && !step.query().isEmpty()) {
@@ -105,14 +106,32 @@ public class TestCaseRunner {
         }
         Map<String, String> headers = new LinkedHashMap<>();
         if (step.headers() != null) step.headers().forEach((key, value) -> headers.put(key, variables.resolve(value, values)));
-        byte[] body = body(step, values);
-        if (body.length > 0) headers.putIfAbsent("Content-Type", "application/json");
+        byte[] body = body(caseName, step, values);
+        if (body.length > 0 && headers.keySet().stream().noneMatch("Content-Type"::equalsIgnoreCase)) {
+            headers.put("Content-Type", "application/json");
+        }
         return new MutableRequest(text(step.method(), "GET").toUpperCase(), URI.create(url.toString()), headers, body);
     }
 
-    private byte[] body(TestStep step, Map<String, String> values) {
+    private byte[] body(String caseName, TestStep step, Map<String, String> values) {
         try {
-            if (step.bodyFile() != null) {
+            rejectBlank("bodyFile", step.bodyFile());
+            rejectBlank("globalBodyFile", step.globalBodyFile());
+            rejectBlank("caseBodyFile", step.caseBodyFile());
+            int sources = (step.body() == null ? 0 : 1)
+                    + (hasText(step.bodyFile()) ? 1 : 0)
+                    + (hasText(step.globalBodyFile()) ? 1 : 0)
+                    + (hasText(step.caseBodyFile()) ? 1 : 0);
+            if (sources > 1) {
+                throw new IllegalArgumentException("Only one of body, bodyFile, globalBodyFile and caseBodyFile may be used");
+            }
+            if (hasText(step.globalBodyFile())) {
+                return resolvedJson(workspace.globalJsonFile(step.globalBodyFile()), values);
+            }
+            if (hasText(step.caseBodyFile())) {
+                return resolvedJson(workspace.caseJsonFile(caseName, step.caseBodyFile()), values);
+            }
+            if (hasText(step.bodyFile())) {
                 return variables.resolve(new String(workspace.bodyFile(step.bodyFile()), StandardCharsets.UTF_8), values)
                         .getBytes(StandardCharsets.UTF_8);
             }
@@ -121,6 +140,11 @@ public class TestCaseRunner {
         } catch (Exception e) {
             throw new IllegalArgumentException("Cannot build body for step " + step.name(), e);
         }
+    }
+
+    private byte[] resolvedJson(java.nio.file.Path path, Map<String, String> values) throws Exception {
+        JsonNode resolved = variables.resolve(workspace.jsonFile(path), values);
+        return workspace.jsonMapper().writeValueAsBytes(resolved);
     }
 
     private void extract(TestStep step, String body, Map<String, String> values) {
@@ -132,6 +156,10 @@ public class TestCaseRunner {
     }
 
     private String encode(String value) { return URLEncoder.encode(value, StandardCharsets.UTF_8); }
+    private boolean hasText(String value) { return value != null && !value.isBlank(); }
+    private void rejectBlank(String name, String value) {
+        if (value != null && value.isBlank()) throw new IllegalArgumentException(name + " must not be blank");
+    }
     private void requireHttp(String protocol, String source) {
         if (protocol != null && !protocol.isBlank() && !"http".equalsIgnoreCase(protocol)) {
             throw new IllegalArgumentException("Unsupported protocol '" + protocol + "' in " + source + "; only http is implemented");

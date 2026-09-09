@@ -13,7 +13,6 @@ public final class DefaultSecurityHandlers {
         handlers.add(new NoSecurityHandler());
         handlers.add(new DemoHmacSecurityHandler());
         handlers.add(new QueryBodyHmacSecurityHandler());
-
         // External extension jars can register HttpSecurityHandler through Java ServiceLoader.
         ServiceLoader.load(HttpSecurityHandler.class).forEach(handlers::add);
         return new SecurityHandlerRegistry(handlers);

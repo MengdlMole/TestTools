@@ -110,6 +110,29 @@ public class WorkspaceService {
         }
     }
 
+    /** Shared JSON fixture under fixtures/global, available to every case. */
+    public Path globalJsonFile(String relativeFile) {
+        return jsonFixture(root.resolve("fixtures/global"), relativeFile);
+    }
+
+    /** Case-owned JSON fixture under cases/{caseName}/fixtures. */
+    public Path caseJsonFile(String caseName, String relativeFile) {
+        return jsonFixture(root.resolve("cases").resolve(safeName(caseName)).resolve("fixtures"), relativeFile);
+    }
+
+    public JsonNode jsonFile(Path path) {
+        try {
+            Path realRoot = root.toRealPath();
+            Path realPath = path.toAbsolutePath().normalize().toRealPath();
+            if (!realPath.startsWith(realRoot)) throw new IllegalArgumentException("JSON file must remain inside workspace");
+            JsonNode result = jsonMapper.readTree(realPath.toFile());
+            if (result == null) throw new WorkspaceException("JSON fixture must not be empty: " + path);
+            return result;
+        } catch (IOException e) {
+            throw new WorkspaceException("Cannot read JSON file: " + path, e);
+        }
+    }
+
     public ObjectMapper jsonMapper() { return jsonMapper; }
 
     public synchronized Path saveResult(String relativePath, Object result) {
@@ -209,5 +232,31 @@ public class WorkspaceService {
         if (Files.isRegularFile(yaml)) return yaml;
         Path yml = root.resolve(directory).resolve(safe + ".yml");
         return Files.isRegularFile(yml) ? yml : yaml;
+    }
+
+    private Path jsonFixture(Path fixtureRoot, String relativeFile) {
+        if (relativeFile == null || relativeFile.isBlank()) {
+            throw new IllegalArgumentException("JSON fixture name is required");
+        }
+        Path normalizedRoot = fixtureRoot.toAbsolutePath().normalize();
+        Path path = normalizedRoot.resolve(relativeFile).normalize();
+        if (!path.startsWith(normalizedRoot)) {
+            throw new IllegalArgumentException("JSON fixture must remain inside " + normalizedRoot);
+        }
+        if (!path.getFileName().toString().toLowerCase().endsWith(".json")) {
+            throw new IllegalArgumentException("JSON fixture must use a .json extension: " + relativeFile);
+        }
+        if (!Files.isRegularFile(path)) throw new WorkspaceException("JSON fixture does not exist: " + path);
+        try {
+            Path realWorkspace = root.toRealPath();
+            Path realRoot = normalizedRoot.toRealPath();
+            Path realPath = path.toRealPath();
+            if (!realRoot.startsWith(realWorkspace) || !realPath.startsWith(realRoot)) {
+                throw new IllegalArgumentException("JSON fixture symbolic link must remain inside workspace");
+            }
+            return realPath;
+        } catch (IOException error) {
+            throw new WorkspaceException("Cannot resolve JSON fixture: " + path, error);
+        }
     }
 }

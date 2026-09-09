@@ -6,6 +6,7 @@
 
 ```text
 test-tools-core    Code-first HTTP DSL、共享模型、YAML 工作区、签名/验签 SPI
+test-tools-project-extensions  当前项目/API 专用签名实现，通过 ServiceLoader 加载
 api-test-runner    JUnit 单用例与可选的 TestNG/YAML 批量测试入口
 mock-server        Spring Boot MVC 本地 HTTP Mock 与异步回调服务
 test-workspace     可提交和共享的用例、套件、Mock 与 fixtures
@@ -31,7 +32,7 @@ test-workspace     可提交和共享的用例、套件、Mock 与 fixtures
 
 | 示例 | 代码/配置 | 演示内容 |
 | --- | --- | --- |
-| 单接口 JUnit | `CodeFirstApiExamples.java` | before/after、普通请求、用例内签名、复用签名处理器 |
+| 单接口 JUnit | `CodeFirstApiExamples.java` | before/after、普通请求、全局/用例级 JSON、用例内签名、复用签名处理器 |
 | query + body 签名 | `QueryBodyHmacSecurityHandler.java`、`mocks/query-body-signed.yaml` | 同名 query、编码后排序、原始 body、双向签名/验签 |
 | 关联场景 | `AssociatedApiScenarioExamples.java` | 多步骤传值、整条链路重复、失败后清理 |
 | YAML 单用例 | `cases/signed-echo.yaml`、`IdeApiTestLauncher.java` | 数据持久化、单用例 IDE Run/Debug |
@@ -122,6 +123,114 @@ public class OrderApiTest extends ApiTestSupport {
 
 如果这类测试依赖必须手动启动的本地服务，可把类命名为 `*Examples` 或 `*Launcher`，避免普通 `mvn test` 自动执行；需要纳入持续集成时，使用标准的 `*Test` 类名。
 
+### 设置请求 Header
+
+单个请求可逐个添加 header，也可以批量添加：
+
+```java
+String tranId = "111";
+String timestamp = String.valueOf(Instant.now().getEpochSecond());
+
+ApiTestClient.ApiResponse response = client.post("/orders")
+        .header("tranId", tranId)
+        .header("timestamp", timestamp)
+        .headers(Map.of(
+                "X-Tenant-Id", "T1001",
+                "X-Source", "local-test"
+        ))
+        .jsonBody(requestBody)
+        .executeVerified();
+```
+
+多个请求都需要的固定 header 可在创建 client 时配置：
+
+```java
+ApiTestClient client = ApiTestClient.builder("http://127.0.0.1:8080")
+        .defaultHeader("X-Tenant-Id", "T1001")
+        .defaultHeader("X-Source", "local-test")
+        .build();
+```
+
+请求上的 `header(...)` 会按 HTTP 规范忽略名称大小写并覆盖同名默认值。签名相关字段应在 `signWith(...)` 或 `security(...)` 之前设置；签名器执行时 URL、header 和 body 都已经组装完成。
+
+### 按指定 Header 和 JSON 字段组装签名
+
+这类规则属于具体接口，推荐直接写在对应 JUnit 用例的 `signWith` 中，不放进通用框架。下面以 `POST /signed/header-body` 为例：
+
+- 从 header 读取 `tranId=111`。
+- 从 header 读取 `timestamp=222`。
+- 解析 JSON 请求体并读取 `name=333`。
+- 不依赖 header 或 JSON 本身的存储顺序，而是按协议指定顺序组装。
+- 最终签名原文为 `tranId111timestamp222name333`。
+- 使用本地 `appSecret` 计算 HMAC-SHA256，并写入 `X-Signature`。
+
+用例中的核心组装逻辑如下：
+
+```java
+private String signedHeaderBodyApiSignData(MutableRequest request) throws Exception {
+    String tranId = requiredHeader(request, "tranId");
+    String timestamp = requiredHeader(request, "timestamp");
+    JsonNode body = workspace().jsonMapper().readTree(request.body());
+    JsonNode nameNode = body == null ? null : body.get("name");
+    if (nameNode == null || nameNode.isNull() || !nameNode.isValueNode()) {
+        throw new IllegalArgumentException("Missing scalar JSON body field: name");
+    }
+    String name = nameNode.asText();
+
+    return "tranId" + tranId
+            + "timestamp" + timestamp
+            + "name" + name;
+}
+```
+
+完整 JUnit 用例先设置请求字段，然后在本用例内签名：
+
+```java
+@Test
+void signedSelectedHeaderAndJsonBodyFields() {
+    String appKey = secret("local", "appKey");
+    String appSecret = secret("local", "appSecret");
+
+    ApiTestClient.ApiResponse response = client.post("/signed/header-body")
+            .header("tranId", "111")
+            .header("timestamp", "222")
+            .jsonBodyFile(globalJson("header-body-request.json"))
+            .signWith(request -> {
+                String signData = signedHeaderBodyApiSignData(request);
+                request.header("X-App-Key", appKey);
+                request.header("X-Signature", hmacSha256(appSecret, signData));
+            })
+            .executeVerified();
+
+    assertEquals(200, response.status());
+}
+```
+
+这样接口字段或规则变化时，直接修改这个测试方法或它旁边的私有辅助方法，不会影响其他接口。`signWith` 在请求组装完成后才执行，所以能读取最终 header 和最终 JSON body。
+
+YAML 不能内嵌 Java lambda。只有当该接口需要 YAML/TestNG 执行或 Mock 双端验签时，才在 `test-tools-project-extensions` 中为它增加一个 API 专用处理器。仓库示例 `SignedHeaderBodyApiSecurityHandler` 明确限定只能用于 `POST /signed/header-body`：
+
+```yaml
+- name: 按指定字段和顺序签名
+  method: POST
+  path: /signed/header-body
+  securityHandler: signedHeaderBodyApi
+  headers:
+    tranId: "111"
+    timestamp: "222"
+  globalBodyFile: header-body-request.json
+```
+
+完整可运行文件：
+
+- `CodeFirstApiExamples.signedSelectedHeaderAndJsonBodyFields()`
+- `test-tools-project-extensions/.../SignedHeaderBodyApiSecurityHandler.java`：仅供该 API 的 YAML 和 Mock 使用。
+- `cases/header-body-signature.yaml`
+- `fixtures/global/header-body-request.json`
+- `mocks/header-body-signed.yaml`
+
+新接口优先在自己的 JUnit 用例内增加 `signWith`。若新接口也需要 YAML/Mock，再在项目扩展模块复制一个以接口命名的专用处理器，修改 method/path、读取字段、追加顺序、标签和分隔符，并把类名加入 `META-INF/services/io.github.localtools.testtools.security.HttpSecurityHandler`。不要修改 core，也不要向 `SignedHeaderBodyApiSecurityHandler` 添加其他接口的分支。
+
 ### 在用例内完全自定义请求和签名
 
 下面的签名规则由这个用例自行决定：选择 `local` 环境的 `appSecret`，把编码后的 `queryString + bodyString` 直接拼接，再计算 HMAC-SHA256 并写入 header。
@@ -198,6 +307,7 @@ ApiTestClient.ApiResponse response = client.post("/signed/echo")
 - `get/post/put/patch/delete/request`，path 或完整 URL。
 - `query/queries`、`header/headers`；多次调用 `query` 可发送同名参数并保持添加顺序。
 - `body(String)`、`body(byte[])`、`bodyFile(Path)`、`jsonBody(Object)`。
+- `jsonBodyFile(Path)`：校验 JSON、保留文件原始字节并自动设置 JSON Content-Type。
 - 单请求 `timeout(Duration)`。
 - `status()`、`header()`、`body()`、`json()`、`jsonPath()` 和 `durationMs()`。
 - 默认输出脱敏后的请求/响应日志；签名、Authorization、Cookie、API Key 等 header 显示为 `***`。
@@ -205,6 +315,63 @@ ApiTestClient.ApiResponse response = client.post("/signed/echo")
 `jsonBody` 会序列化对象并自动补充 `Content-Type: application/json`；`body` 和 `bodyFile` 不猜测媒体类型，需要用例显式设置 header。包含 token、secret、signature、api-key 等名称的 query 值也会在日志和记录中脱敏。
 
 JUnit 断言、参数化测试、嵌套测试、before/after、测试夹具和调试器都可以正常使用。框架不会把这些能力重新封装一遍。
+
+### 从持久化 JSON 直接获取请求体
+
+JSON 请求体分为两个作用域：
+
+```text
+test-workspace/
+├── fixtures/global/                         # 全局 JSON，所有用例可复用
+│   └── echo-request.json
+└── cases/
+    ├── signed-echo.yaml
+    └── signed-echo/fixtures/                 # signed-echo 用例独占
+        └── echo-request.json
+```
+
+JUnit 用例通过 `ApiTestSupport` 提供的路径方法直接发送：
+
+```java
+@Test
+void requestBodyFromJson() {
+    // 全局 JSON：test-workspace/fixtures/global/echo-request.json
+    client.post("/signed/echo")
+            .jsonBodyFile(globalJson("echo-request.json"))
+            .security(securityHandler("demoHmacSha256"), signContext("local"))
+            .executeVerified();
+
+    // 用例级 JSON：
+    // test-workspace/cases/code-first-json/fixtures/echo-request.json
+    client.post("/signed/echo")
+            .jsonBodyFile(caseJson("code-first-json", "echo-request.json"))
+            .security(securityHandler("demoHmacSha256"), signContext("local"))
+            .executeVerified();
+}
+```
+
+JUnit 提供两种语义，调用时应明确选择：
+
+- `jsonBodyFile(globalJson(...))` / `jsonBodyFile(caseJson(...))`：原样发送文件，不替换 `${变量}`。它会保留空格、换行和字段顺序，适合“原始 body 参与签名”的接口。
+- `jsonBody(resolvedGlobalJson(...))` / `jsonBody(resolvedCaseJson(...))`：先读取 JSON 模型，再按 workspace → environment → overrides 的顺序替换变量，最后序列化并发送。适合需要动态字段的请求。
+
+例如解析全局模板并覆盖 `clientName`：
+
+```java
+JsonNode requestBody = resolvedGlobalJson(
+        "local",
+        "echo-template.json",
+        Map.of("clientName", "junit-json-template")
+);
+
+client.post("/signed/echo")
+        .jsonBody(requestBody)
+        .executeVerified();
+```
+
+两种方式都会先校验合法 JSON，且路径只能位于对应的 global 或 case fixture 目录内。使用变量解析时 JSON 会重新序列化，签名必须以 `signWith` 中看到的最终 `request.bodyText()` 为准。
+
+可运行示例是 `CodeFirstApiExamples.signedEchoUsingGlobalJsonBody()`、`signedEchoUsingResolvedGlobalJsonBody()` 和 `signedEchoUsingCaseJsonBody()`。
 
 ### 关联用例一起运行和重复场景
 
@@ -265,7 +432,9 @@ void orderPaymentScenario() {
 
 - `environments/`：目标 URL、默认安全处理器和环境变量。
 - `secrets/local-secrets.yaml`：仅本地密钥，默认被 `.gitignore` 排除。
-- `fixtures/`：可共享 JSON 请求/响应模型数据，字段可直接增删。
+- `fixtures/global/`：所有 JUnit、YAML 用例都可复用的全局 JSON 请求模型。
+- `cases/<用例标识>/fixtures/`：只属于该用例的 JSON 请求模型，避免同名文件相互影响。
+- `fixtures/` 其他位置：兼容原有 `bodyFile` 以及 Mock/回调响应文件。
 - `cases/`：接口用例、步骤、变量提取与断言。
 - `suites/`：用例集合，支持 `repeat` 和 `stopOnFailure`。
 - `mocks/`：Mock 匹配与响应定义；运行中修改文件，下一次请求即生效。
@@ -313,7 +482,7 @@ secrets:
 
 ### 2. 准备请求模型或预制数据
 
-较大的 JSON 请求建议放在 `test-workspace/fixtures/`，例如 `test-workspace/fixtures/create-order.json`：
+跨用例复用的 JSON 放在 `test-workspace/fixtures/global/`，例如 `test-workspace/fixtures/global/create-order.json`：
 
 ```json
 {
@@ -324,6 +493,47 @@ secrets:
 ```
 
 fixture 以及步骤的 `path`、query 值、header 值和请求 `body` 中都可以使用 `${变量名}`。变量覆盖顺序为：`workspace.yaml variables` → 环境 variables → 用例 variables → 前序步骤 extract 的结果。断言的 `expected` 当前使用直接值，不进行变量替换。
+
+在 YAML 步骤中用 `globalBodyFile` 直接引用，路径相对于 `fixtures/global/`：
+
+```yaml
+- name: 使用公共下单模型
+  method: POST
+  path: /orders
+  globalBodyFile: create-order.json
+```
+
+只属于某个用例的请求 JSON 放在 `test-workspace/cases/<用例标识>/fixtures/`。例如 `cases/create-order/fixtures/special-request.json`，在 `cases/create-order.yaml` 中写：
+
+```yaml
+- name: 使用本用例专属模型
+  method: POST
+  path: /orders
+  caseBodyFile: special-request.json
+```
+
+YAML 的全局和用例级 JSON 都支持 `${变量名}`，替换时按 JSON 字符串处理，因此变量包含引号、反斜线或换行也不会破坏 JSON。允许在各自 fixture 目录下继续建立子目录，例如 `globalBodyFile: order/create.json`。
+
+一个步骤只能选择一种请求体来源：
+
+- `body`：YAML 内联 JSON。
+- `globalBodyFile`：全局 JSON。
+- `caseBodyFile`：用例级 JSON。
+- `bodyFile`：兼容模式，路径相对于工作区，读取普通原始文本。
+
+同时配置多个来源会在执行前失败，防止实际发送的请求体不明确。新 JSON 用例优先使用 `globalBodyFile` 或 `caseBodyFile`。
+
+仓库中已经包含两条可执行 YAML 示例：
+
+```bash
+# cases/signed-echo.yaml 使用 caseBodyFile
+java -jar api-test-runner/target/api-test-runner.jar \
+  --workspace test-workspace --case signed-echo
+
+# cases/global-json-body.yaml 使用 globalBodyFile
+java -jar api-test-runner/target/api-test-runner.jar \
+  --workspace test-workspace --case global-json-body
+```
 
 ### 3. 新增用例文件
 
@@ -343,8 +553,8 @@ steps:
       source: local-test
     headers:
       X-Tenant-Id: "${tenantId}"
-    bodyFile: fixtures/create-order.json
-    # 简短请求也可以直接使用 body，body 与 bodyFile 二选一。
+    globalBodyFile: create-order.json
+    # 也可改为 caseBodyFile 或内联 body；四种 body 来源只能选择一个。
     extract:
       orderId: $.data.id
     assertions:
@@ -378,6 +588,7 @@ steps:
 - `extract` 的值是 JSONPath，提取结果可被后续步骤通过 `${变量名}` 使用。
 - `expected` 支持字符串、数字、布尔值等 JSON 类型；类型应与实际响应一致。
 - 请求体非空时工具会自动补充 `Content-Type: application/json`，显式 header 优先。
+- `globalBodyFile` 从 `fixtures/global/` 读取；`caseBodyFile` 从与当前 YAML 同名的 `cases/<用例标识>/fixtures/` 读取。
 
 ### 4. 按需加入测试套件
 
@@ -614,7 +825,9 @@ afterResponse:
 
 ### 2. 实现处理器
 
-仓库已提供可直接运行的 `QueryBodyHmacSecurityHandler.java`。复制它并修改 `id()`、`buildSignData()` 与密码计算方法，就能快速支持新接口。该示例将排序后的 `queryString + bodyString` 直接拼接，再使用本地密钥计算 HMAC-SHA256：
+仓库已提供可直接运行的通用示例 `QueryBodyHmacSecurityHandler.java`。如果多个接口确实遵循完全相同的协议，可复用这种通用处理器。针对单个接口的协议，应在 `test-tools-project-extensions` 中复制 `SignedHeaderBodyApiSecurityHandler.java`，以接口命名并限定 method/path，不能把不同接口的字段分支不断堆进 core 的通用处理器。
+
+下面的代码用于解释“排序后的 `queryString + bodyString` 再做 HMAC-SHA256”的组装方式；实际新增 API 专用处理器时，把同样的组装与计算方法放进项目扩展类：
 
 ```java
 public final class QueryBodyHmacSecurityHandler implements HttpSecurityHandler {
@@ -692,11 +905,20 @@ import java.util.stream.Collectors;
 
 ### 3. 注册算法并配置密钥
 
-在同目录的 `DefaultSecurityHandlers.java` 的 `create()` 方法中注册。示例处理器已经注册；复制出新处理器时再增加一行：
+API 专用处理器不修改 `DefaultSecurityHandlers`。把实现类放到 `test-tools-project-extensions/src/main/java/`，再把它的完整类名追加到：
 
-```java
-handlers.add(new QueryBodyHmacSecurityHandler());
+```text
+test-tools-project-extensions/src/main/resources/
+META-INF/services/io.github.localtools.testtools.security.HttpSecurityHandler
 ```
+
+例如仓库当前的注册内容：
+
+```text
+io.github.localtools.testtools.project.security.SignedHeaderBodyApiSecurityHandler
+```
+
+runner 和 mock-server 已依赖该扩展模块，重新构建后会通过 Java ServiceLoader 自动发现。只有确定是跨项目、跨接口稳定复用的基础算法，才考虑放入 core；业务字段、接口路径和专用拼接规则都留在项目扩展模块或 JUnit 用例内。
 
 然后在 `test-workspace/secrets/local-secrets.yaml` 的目标 `secretRef` 下提供处理器读取的 key：
 
@@ -730,7 +952,7 @@ secrets:
 
 接口提供了默认空实现，只覆盖实际协议需要的方向即可。若服务响应也签名，应使用与服务端完全相同的响应组装规则实现 `verifyResponse`；本地 Mock 要模拟该行为时同时实现 `signMockResponse`。完整的四方向示例见 `DemoHmacSecurityHandler.java`。
 
-也支持把处理器放在独立 jar 中，通过 Java `ServiceLoader<HttpSecurityHandler>` 注册，核心代码无需修改。
+也可以进一步把项目扩展模块发布为独立 jar；注册方式仍是 `ServiceLoader<HttpSecurityHandler>`，核心代码无需修改。
 
 ## 常见问题与排查
 

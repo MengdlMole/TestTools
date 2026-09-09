@@ -1,0 +1,4 @@
+{
+  "message": "hello from ${clientName}",
+  "tenantId": "${tenantId}"
+}

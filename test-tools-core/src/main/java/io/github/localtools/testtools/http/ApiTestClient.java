@@ -80,7 +80,7 @@ public final class ApiTestClient {
 
         public Request header(String name, Object value) {
             if (name == null || name.isBlank()) throw new IllegalArgumentException("Header name is required");
-            headers.put(name, value == null ? "" : String.valueOf(value));
+            putHeader(headers, name, value == null ? "" : String.valueOf(value));
             return this;
         }
 
@@ -107,10 +107,31 @@ public final class ApiTestClient {
         public Request jsonBody(Object value) {
             try {
                 body = value == null ? new byte[0] : mapper.writeValueAsBytes(value);
-                if (body.length > 0) headers.putIfAbsent("Content-Type", "application/json");
+                if (body.length > 0 && !containsHeader(headers, "Content-Type")) {
+                    headers.put("Content-Type", "application/json");
+                }
                 return this;
             } catch (Exception error) {
                 throw new IllegalArgumentException("Cannot serialize JSON request body", error);
+            }
+        }
+
+        /**
+         * Uses the JSON file bytes as the exact request body and adds application/json.
+         * Keeping the original bytes is useful when the body text participates in signing.
+         */
+        public Request jsonBodyFile(Path file) {
+            try {
+                byte[] content = Files.readAllBytes(file);
+                JsonNode parsed = mapper.readTree(content);
+                if (parsed == null) throw new IllegalArgumentException("JSON request body must not be empty: " + file);
+                body = content;
+                if (!containsHeader(headers, "Content-Type")) headers.put("Content-Type", "application/json");
+                return this;
+            } catch (IllegalArgumentException error) {
+                throw error;
+            } catch (Exception error) {
+                throw new IllegalArgumentException("Cannot read JSON request body: " + file, error);
             }
         }
 
@@ -213,7 +234,7 @@ public final class ApiTestClient {
         }
         public Builder defaultHeader(String name, String value) {
             if (name == null || name.isBlank()) throw new IllegalArgumentException("Header name is required");
-            defaultHeaders.put(name, value == null ? "" : value);
+            putHeader(defaultHeaders, name, value == null ? "" : value);
             return this;
         }
         public Builder timeout(Duration value) {
@@ -259,6 +280,13 @@ public final class ApiTestClient {
         return result;
     }
     private static String encode(String value) { return URLEncoder.encode(value, StandardCharsets.UTF_8); }
+    private static boolean containsHeader(Map<String, String> headers, String name) {
+        return headers.keySet().stream().anyMatch(key -> key.equalsIgnoreCase(name));
+    }
+    private static void putHeader(Map<String, String> headers, String name, String value) {
+        headers.keySet().removeIf(key -> key.equalsIgnoreCase(name));
+        headers.put(name, value);
+    }
     private static Map<String, String> flatten(Map<String, List<String>> headers) {
         Map<String, String> result = new LinkedHashMap<>();
         headers.forEach((key, value) -> result.put(key, String.join(", ", value)));

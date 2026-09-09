@@ -12,6 +12,7 @@
 
     <modules>
         <module>test-tools-core</module>
+        <module>test-tools-project-extensions</module>
         <module>api-test-runner</module>
         <module>mock-server</module>
     </modules>
@@ -40,6 +41,11 @@
             <dependency>
                 <groupId>io.github.localtools</groupId>
                 <artifactId>test-tools-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.localtools</groupId>
+                <artifactId>test-tools-project-extensions</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

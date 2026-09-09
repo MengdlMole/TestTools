@@ -1,0 +1,4 @@
+{
+  "message": "hello from a shared global JSON fixture",
+  "tenantId": "local-tenant"
+}

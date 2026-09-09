@@ -1,0 +1,17 @@
+name: Header + JSON 字段签名示例
+protocol: http
+enabled: true
+priority: 10
+securityHandler: signedHeaderBodyApi
+
+request:
+  method: POST
+  path: /signed/header-body
+
+response:
+  status: 200
+  headers:
+    Content-Type: application/json
+  body:
+    success: true
+    canonical: tranId111timestamp222name333

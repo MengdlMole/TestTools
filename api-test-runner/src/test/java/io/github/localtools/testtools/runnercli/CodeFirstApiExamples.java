@@ -1,6 +1,8 @@
 package io.github.localtools.testtools.runnercli;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.github.localtools.testtools.http.ApiTestClient;
+import io.github.localtools.testtools.http.HttpModels.MutableRequest;
 import io.github.localtools.testtools.security.VerificationResult;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -92,6 +94,39 @@ public final class CodeFirstApiExamples extends ApiTestSupport {
     }
 
     @Test
+    void signedEchoUsingGlobalJsonBody() {
+        ApiTestClient.ApiResponse response = client.post("/signed/echo")
+                .jsonBodyFile(globalJson("echo-request.json"))
+                .security(securityHandler("demoHmacSha256"), signContext("local"))
+                .executeVerified();
+
+        assertEquals(200, response.status());
+    }
+
+    @Test
+    void signedEchoUsingResolvedGlobalJsonBody() {
+        JsonNode requestBody = resolvedGlobalJson(
+                "local", "echo-template.json", Map.of("clientName", "junit-json-template"));
+
+        ApiTestClient.ApiResponse response = client.post("/signed/echo")
+                .jsonBody(requestBody)
+                .security(securityHandler("demoHmacSha256"), signContext("local"))
+                .executeVerified();
+
+        assertEquals(200, response.status());
+    }
+
+    @Test
+    void signedEchoUsingCaseJsonBody() {
+        ApiTestClient.ApiResponse response = client.post("/signed/echo")
+                .jsonBodyFile(caseJson("code-first-json", "echo-request.json"))
+                .security(securityHandler("demoHmacSha256"), signContext("local"))
+                .executeVerified();
+
+        assertEquals(200, response.status());
+    }
+
+    @Test
     void signedQueryAndBodyWithReusableHandler() {
         ApiTestClient.ApiResponse response = client.post("/signed/query-body")
                 .query("z", "last")
@@ -103,6 +138,54 @@ public final class CodeFirstApiExamples extends ApiTestSupport {
 
         assertEquals(200, response.status());
         assertEquals("sortedRawQueryPlusExactBody", response.jsonPath("$.signData"));
+    }
+
+    @Test
+    void signedSelectedHeaderAndJsonBodyFields() {
+        String appKey = secret("local", "appKey");
+        String appSecret = secret("local", "appSecret");
+
+        ApiTestClient.ApiResponse response = client.post("/signed/header-body")
+                .header("tranId", "111")
+                .header("timestamp", "222")
+                .jsonBodyFile(globalJson("header-body-request.json"))
+                // This signature belongs to POST /signed/header-body and is intentionally
+                // kept in this API test. Change it here when this API protocol changes.
+                .signWith(request -> {
+                    String signData = signedHeaderBodyApiSignData(request);
+                    request.header("X-App-Key", appKey);
+                    request.header("X-Signature", hmacSha256(appSecret, signData));
+                })
+                .executeVerified();
+
+        assertEquals(200, response.status());
+        assertEquals("tranId111timestamp222name333", response.jsonPath("$.canonical"));
+    }
+
+    private String signedHeaderBodyApiSignData(MutableRequest request) {
+        try {
+            String tranId = requiredHeader(request, "tranId");
+            String timestamp = requiredHeader(request, "timestamp");
+            JsonNode body = workspace().jsonMapper().readTree(request.body());
+            JsonNode nameNode = body == null ? null : body.get("name");
+            if (nameNode == null || nameNode.isNull() || !nameNode.isValueNode()) {
+                throw new IllegalArgumentException("Missing scalar JSON body field: name");
+            }
+            return "tranId" + tranId + "timestamp" + timestamp + "name" + nameNode.asText();
+        } catch (IllegalArgumentException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new IllegalArgumentException("Cannot build signature data for POST /signed/header-body", error);
+        }
+    }
+
+    private String requiredHeader(MutableRequest request, String name) {
+        return request.headers().entrySet().stream()
+                .filter(entry -> entry.getKey().equalsIgnoreCase(name))
+                .map(Map.Entry::getValue)
+                .filter(value -> value != null && !value.isBlank())
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Missing required header: " + name));
     }
 
     private String hmacSha256(String secret, String content) {

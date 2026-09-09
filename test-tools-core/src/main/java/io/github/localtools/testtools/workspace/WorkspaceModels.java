@@ -19,7 +19,8 @@ public final class WorkspaceModels {
     public record TestSuite(String name, List<String> cases, Boolean stopOnFailure, Integer repeat) {}
     public record TestStep(String name, String operationId, String protocol, String method, String path,
                            Map<String, String> query, Map<String, String> headers,
-                           String bodyFile, JsonNode body, String securityHandler,
+                           String bodyFile, String globalBodyFile, String caseBodyFile,
+                           JsonNode body, String securityHandler,
                            Map<String, String> extract, List<AssertionDefinition> assertions) {}
     public record AssertionDefinition(String type, String path, String operator, JsonNode expected) {}
     public record MockDefinition(String name, String protocol, Boolean enabled, Integer priority,

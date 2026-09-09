@@ -1,0 +1,13 @@
+name: 使用全局 JSON 请求体
+environment: local
+
+steps:
+  - name: 从全局 JSON 读取请求体
+    protocol: http
+    operationId: signedEcho
+    method: POST
+    path: /signed/echo
+    globalBodyFile: echo-request.json
+    assertions:
+      - type: status
+        expected: 200

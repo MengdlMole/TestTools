@@ -7,7 +7,7 @@ steps:
     operationId: signedEcho
     method: POST
     path: /signed/echo
-    bodyFile: fixtures/echo-request.json
+    caseBodyFile: echo-request.json
     extract:
       echoedMessage: $.echo.message
     assertions:

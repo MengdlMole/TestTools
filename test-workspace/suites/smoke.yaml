@@ -5,3 +5,5 @@ repeat: 1
 cases:
   - plain-health
   - signed-echo
+  - global-json-body
+  - header-body-signature

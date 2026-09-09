@@ -4,7 +4,10 @@ import io.github.localtools.testtools.http.HttpModels.MutableRequest;
 import io.github.localtools.testtools.http.HttpModels.RequestSnapshot;
 import io.github.localtools.testtools.http.HttpModels.ResponseSnapshot;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -17,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ApiTestClientTest {
+    @TempDir Path temporaryDirectory;
+
     @Test
     void buildsAndSignsFinalRequestAndMasksSignatureInLogs() {
         StubExecutor executor = new StubExecutor();
@@ -25,10 +30,12 @@ class ApiTestClientTest {
         body.put("message", "hello");
 
         ApiTestClient.ApiResponse response = ApiTestClient.builder("http://localhost:8080/")
+                .defaultHeader("x-test-header", "default")
                 .executor(executor)
                 .logger(logs::add)
                 .build()
                 .post("/orders")
+                .header("X-Test-Header", "request")
                 .query("name", "hello world")
                 .query("name", "again")
                 .query("apiToken", "query-secret")
@@ -38,6 +45,8 @@ class ApiTestClientTest {
                 .execute();
 
         assertEquals("name=hello+world&name=again&apiToken=query-secret", executor.request.uri().getRawQuery());
+        assertEquals("request", executor.request.headers().get("X-Test-Header"));
+        assertFalse(executor.request.headers().containsKey("x-test-header"));
         assertEquals("name=hello+world&name=again&apiToken=query-secret{\"message\":\"hello\"}",
                 executor.request.headers().get("X-Signature"));
         assertEquals(201, response.status());
@@ -58,6 +67,24 @@ class ApiTestClientTest {
         ApiTestClient.ResponseVerificationException error = assertThrows(
                 ApiTestClient.ResponseVerificationException.class, request::executeVerified);
         assertEquals("bad signature", error.getMessage());
+    }
+
+    @Test
+    void usesJsonFileBytesDirectlyAndAddsContentType() throws Exception {
+        Path json = temporaryDirectory.resolve("request.json");
+        Files.writeString(json, "{\n  \"message\": \"preserve whitespace\"\n}\n");
+        StubExecutor executor = new StubExecutor();
+
+        ApiTestClient.builder("http://localhost")
+                .executor(executor)
+                .logger(message -> {})
+                .build()
+                .post("/echo")
+                .jsonBodyFile(json)
+                .execute();
+
+        assertEquals("{\n  \"message\": \"preserve whitespace\"\n}\n", executor.request.bodyText());
+        assertEquals("application/json", executor.request.headers().get("Content-Type"));
     }
 
     private static final class StubExecutor extends HttpExecutor {
