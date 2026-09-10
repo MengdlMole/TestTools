@@ -7,8 +7,6 @@ import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.util.List;
 
-import static io.github.localtools.testtools.mock.MockRuntimeModels.CallbackTask;
-
 @Component
 class CallbackCompletionInterceptor implements HandlerInterceptor {
     private final HttpCallbackDispatcher dispatcher;

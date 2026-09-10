@@ -7,9 +7,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.Map;
 
-import static io.github.localtools.testtools.mock.MockRuntimeModels.CallbackExecution;
-import static io.github.localtools.testtools.mock.MockRuntimeModels.MockCall;
-
 @RestController
 @RequestMapping("/__testtools")
 class MockAdminController {

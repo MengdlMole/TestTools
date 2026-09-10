@@ -1,8 +1,9 @@
 package io.github.localtools.testtools.mock;
 
-import io.github.localtools.testtools.runner.VariableResolver;
-import io.github.localtools.testtools.security.DefaultSecurityHandlers;
-import io.github.localtools.testtools.workspace.WorkspaceService;
+import io.github.localtools.testtools.workspace.VariableResolver;
+import io.github.localtools.testtools.security.SecurityHandlerLoader;
+import io.github.localtools.testtools.mock.config.MockWorkspace;
+import io.github.localtools.testtools.workspace.TestWorkspace;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -11,16 +12,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class MockServerApplicationTest {
     @TempDir Path temporary;
 
     @Test
     void servesFileBasedMockAndStructuredNotFoundResponse() throws Exception {
-        WorkspaceService workspace = new WorkspaceService(locateWorkspace());
+        TestWorkspace workspace = new TestWorkspace(locateWorkspace());
         HttpMockEngine engine = new HttpMockEngine(
-                workspace,
-                DefaultSecurityHandlers.create(),
+                new MockWorkspace(workspace),
+                SecurityHandlerLoader.create(),
                 new VariableResolver(workspace.jsonMapper()),
                 new MockCallStore()
         );
@@ -66,13 +68,59 @@ class MockServerApplicationTest {
                   body:
                     status: UP
                 """);
-        WorkspaceService workspace = new WorkspaceService(temporary);
-        HttpMockEngine engine = new HttpMockEngine(workspace, DefaultSecurityHandlers.create(),
+        TestWorkspace workspace = new TestWorkspace(temporary);
+        HttpMockEngine engine = new HttpMockEngine(new MockWorkspace(workspace), SecurityHandlerLoader.create(),
                 new VariableResolver(workspace.jsonMapper()), new MockCallStore());
 
         var response = engine.execute(new MockHttpServletRequest("GET", "/health"), new byte[0]);
 
         assertEquals(200, response.response().status());
+    }
+
+    @Test
+    void respectsCaseInsensitiveContentTypeAndDoesNotLabelBodyFilesAsJson() throws Exception {
+        Files.createDirectories(temporary.resolve("environments"));
+        Files.createDirectories(temporary.resolve("mocks"));
+        Files.createDirectories(temporary.resolve("fixtures"));
+        Files.writeString(temporary.resolve("workspace.yaml"), "defaultEnvironment: local\n");
+        Files.writeString(temporary.resolve("environments/local.yaml"), """
+                name: local
+                baseUrl: http://127.0.0.1
+                """);
+        Files.writeString(temporary.resolve("fixtures/plain.txt"), "plain response");
+        Files.writeString(temporary.resolve("mocks/lowercase-content-type.yaml"), """
+                name: explicit text
+                priority: 1
+                request:
+                  method: GET
+                  path: /explicit-text
+                response:
+                  headers:
+                    content-type: text/plain
+                  body:
+                    value: text
+                """);
+        Files.writeString(temporary.resolve("mocks/body-file.yaml"), """
+                name: body file
+                priority: 2
+                request:
+                  method: GET
+                  path: /body-file
+                response:
+                  bodyFile: fixtures/plain.txt
+                """);
+        TestWorkspace workspace = new TestWorkspace(temporary);
+        HttpMockEngine engine = new HttpMockEngine(new MockWorkspace(workspace), SecurityHandlerLoader.create(),
+                new VariableResolver(workspace.jsonMapper()), new MockCallStore());
+
+        var explicit = engine.execute(new MockHttpServletRequest("GET", "/explicit-text"), new byte[0]);
+        assertEquals("text/plain", explicit.response().headers().get("content-type"));
+        assertFalse(explicit.response().headers().containsKey("Content-Type"));
+
+        var bodyFile = engine.execute(new MockHttpServletRequest("GET", "/body-file"), new byte[0]);
+        assertEquals("plain response", bodyFile.response().bodyText());
+        assertFalse(bodyFile.response().headers().keySet().stream()
+                .anyMatch("Content-Type"::equalsIgnoreCase));
     }
 
     private static Path locateWorkspace() {

@@ -1,0 +1,3 @@
+io.github.localtools.testtools.project.security.DemoHmacSecurityHandler
+io.github.localtools.testtools.project.security.QueryBodyHmacSecurityHandler
+io.github.localtools.testtools.project.security.SignedHeaderBodyApiSecurityHandler

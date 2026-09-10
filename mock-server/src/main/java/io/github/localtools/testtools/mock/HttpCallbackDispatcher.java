@@ -2,16 +2,16 @@ package io.github.localtools.testtools.mock;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.github.localtools.testtools.http.HttpExecutor;
-import io.github.localtools.testtools.http.HttpModels.MutableRequest;
-import io.github.localtools.testtools.runner.VariableResolver;
+import io.github.localtools.testtools.http.MutableRequest;
+import io.github.localtools.testtools.workspace.VariableResolver;
 import io.github.localtools.testtools.security.HttpSecurityHandler;
 import io.github.localtools.testtools.security.SecurityHandlerRegistry;
 import io.github.localtools.testtools.security.SignContext;
 import io.github.localtools.testtools.security.VerificationResult;
-import io.github.localtools.testtools.workspace.WorkspaceModels.AfterResponseDefinition;
-import io.github.localtools.testtools.workspace.WorkspaceModels.CallbackRequest;
-import io.github.localtools.testtools.workspace.WorkspaceModels.RetryDefinition;
-import io.github.localtools.testtools.workspace.WorkspaceService;
+import io.github.localtools.testtools.mock.model.MockDefinition.AfterResponse;
+import io.github.localtools.testtools.mock.model.MockDefinition.CallbackRequest;
+import io.github.localtools.testtools.mock.model.MockDefinition.Retry;
+import io.github.localtools.testtools.workspace.TestWorkspace;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.stereotype.Component;
 
@@ -30,13 +30,12 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static io.github.localtools.testtools.mock.MockRuntimeModels.CallbackExecution;
-import static io.github.localtools.testtools.mock.MockRuntimeModels.CallbackTask;
+import static io.github.localtools.testtools.http.HttpHeaderSupport.putIfAbsentIgnoreCase;
 
 @Component
 class HttpCallbackDispatcher {
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HHmmss-SSS");
-    private final WorkspaceService workspace;
+    private final TestWorkspace workspace;
     private final VariableResolver variables;
     private final SecurityHandlerRegistry handlers;
     private final HttpExecutor http;
@@ -44,7 +43,7 @@ class HttpCallbackDispatcher {
     private final Map<String, CallbackExecution> executions = new ConcurrentHashMap<>();
     private final ArrayDeque<String> recentIds = new ArrayDeque<>();
 
-    HttpCallbackDispatcher(WorkspaceService workspace, VariableResolver variables,
+    HttpCallbackDispatcher(TestWorkspace workspace, VariableResolver variables,
                            SecurityHandlerRegistry handlers, HttpExecutor http,
                            ThreadPoolTaskScheduler scheduler) {
         this.workspace = workspace;
@@ -55,7 +54,7 @@ class HttpCallbackDispatcher {
     }
 
     void submit(CallbackTask task) {
-        AfterResponseDefinition definition = task.definition();
+        AfterResponse definition = task.definition();
         String id = UUID.randomUUID().toString();
         String resultFile = "callbacks/" + LocalDate.now() + "/" + TIME.format(LocalDateTime.now())
                 + "-" + safeName(definition.name()) + "-" + id + ".json";
@@ -81,7 +80,7 @@ class HttpCallbackDispatcher {
                 "RUNNING", 0, null, null, Instant.now().toString(), null, pending.resultFile());
         executions.put(running.id(), running);
 
-        RetryDefinition retry = task.definition().retry();
+        Retry retry = task.definition().retry();
         int maxAttempts = retry == null || retry.maxAttempts() == null ? 1
                 : Math.max(1, Math.min(retry.maxAttempts(), 10));
         long interval = retry == null || retry.intervalMs() == null ? 0 : Math.max(0, retry.intervalMs());
@@ -121,7 +120,7 @@ class HttpCallbackDispatcher {
         if (definition.headers() != null) definition.headers().forEach(
                 (key, value) -> headers.put(key, variables.resolve(value, values)));
         byte[] body = callbackBody(definition, values);
-        if (body.length > 0) headers.putIfAbsent("Content-Type", "application/json");
+        if (definition.body() != null) putIfAbsentIgnoreCase(headers, "Content-Type", "application/json");
         MutableRequest request = new MutableRequest(text(definition.method(), "POST").toUpperCase(),
                 URI.create(url), headers, body);
 
@@ -137,7 +136,7 @@ class HttpCallbackDispatcher {
 
     private byte[] callbackBody(CallbackRequest request, Map<String, String> values) throws Exception {
         if (request.bodyFile() != null) {
-            return variables.resolve(new String(workspace.bodyFile(request.bodyFile()), StandardCharsets.UTF_8), values)
+            return variables.resolve(new String(workspace.fileBytes(request.bodyFile()), StandardCharsets.UTF_8), values)
                     .getBytes(StandardCharsets.UTF_8);
         }
         JsonNode body = variables.resolve(request.body(), values);
@@ -149,7 +148,7 @@ class HttpCallbackDispatcher {
         CallbackExecution completed = new CallbackExecution(running.id(), running.name(), running.mockName(), status,
                 attempts, responseStatus, error, running.startedAt(), Instant.now().toString(), running.resultFile());
         executions.put(completed.id(), completed);
-        workspace.saveResult(completed.resultFile(), completed);
+        workspace.writeResult(completed.resultFile(), completed);
     }
 
     private synchronized void put(CallbackExecution execution) {

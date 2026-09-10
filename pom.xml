@@ -8,12 +8,13 @@
     <version>0.2.0-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>Local API Test Tools</name>
-    <description>Local TestNG API runner and lightweight mock server</description>
+    <description>Local JUnit API testing and lightweight Spring Boot mock server</description>
 
     <modules>
         <module>test-tools-core</module>
-        <module>test-tools-project-extensions</module>
-        <module>api-test-runner</module>
+        <module>project-security</module>
+        <module>api-tests</module>
+        <module>yaml-test-runner</module>
         <module>mock-server</module>
     </modules>
 
@@ -45,7 +46,7 @@
             </dependency>
             <dependency>
                 <groupId>io.github.localtools</groupId>
-                <artifactId>test-tools-project-extensions</artifactId>
+                <artifactId>project-security</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

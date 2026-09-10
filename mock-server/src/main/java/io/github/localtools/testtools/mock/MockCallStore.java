@@ -8,8 +8,6 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 
-import static io.github.localtools.testtools.mock.MockRuntimeModels.MockCall;
-
 @Component
 class MockCallStore {
     private final ArrayDeque<MockCall> calls = new ArrayDeque<>();

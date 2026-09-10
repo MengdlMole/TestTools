@@ -1,9 +1,9 @@
 package io.github.localtools.testtools.security;
 
-import io.github.localtools.testtools.http.HttpModels.MutableRequest;
-import io.github.localtools.testtools.http.HttpModels.MutableResponse;
-import io.github.localtools.testtools.http.HttpModels.RequestSnapshot;
-import io.github.localtools.testtools.http.HttpModels.ResponseSnapshot;
+import io.github.localtools.testtools.http.MutableRequest;
+import io.github.localtools.testtools.http.MutableResponse;
+import io.github.localtools.testtools.http.RequestSnapshot;
+import io.github.localtools.testtools.http.ResponseSnapshot;
 
 public interface HttpSecurityHandler {
     String id();

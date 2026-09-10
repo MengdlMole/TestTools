@@ -1,8 +1,5 @@
 package io.github.localtools.testtools.http;
 
-import io.github.localtools.testtools.http.HttpModels.MutableRequest;
-import io.github.localtools.testtools.http.HttpModels.RequestSnapshot;
-import io.github.localtools.testtools.http.HttpModels.ResponseSnapshot;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

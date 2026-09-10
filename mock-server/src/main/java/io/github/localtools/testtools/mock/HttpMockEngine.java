@@ -1,17 +1,18 @@
 package io.github.localtools.testtools.mock;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.github.localtools.testtools.http.HttpModels.MutableResponse;
-import io.github.localtools.testtools.http.HttpModels.RequestSnapshot;
-import io.github.localtools.testtools.runner.VariableResolver;
+import io.github.localtools.testtools.http.MutableResponse;
+import io.github.localtools.testtools.http.RequestSnapshot;
+import io.github.localtools.testtools.workspace.VariableResolver;
 import io.github.localtools.testtools.security.HttpSecurityHandler;
 import io.github.localtools.testtools.security.SecurityHandlerRegistry;
 import io.github.localtools.testtools.security.SignContext;
 import io.github.localtools.testtools.security.VerificationResult;
-import io.github.localtools.testtools.workspace.WorkspaceModels.EnvironmentConfig;
-import io.github.localtools.testtools.workspace.WorkspaceModels.MockDefinition;
-import io.github.localtools.testtools.workspace.WorkspaceModels.WorkspaceConfig;
-import io.github.localtools.testtools.workspace.WorkspaceService;
+import io.github.localtools.testtools.mock.config.MockWorkspace;
+import io.github.localtools.testtools.mock.model.MockDefinition;
+import io.github.localtools.testtools.workspace.EnvironmentConfig;
+import io.github.localtools.testtools.workspace.TestWorkspace;
+import io.github.localtools.testtools.workspace.WorkspaceConfig;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Component;
 
@@ -26,19 +27,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import static io.github.localtools.testtools.mock.MockRuntimeModels.CallbackTask;
-import static io.github.localtools.testtools.mock.MockRuntimeModels.MockExchange;
+import static io.github.localtools.testtools.http.HttpHeaderSupport.putIfAbsentIgnoreCase;
 
 @Component
 class HttpMockEngine {
-    private final WorkspaceService workspace;
+    private final MockWorkspace mockWorkspace;
+    private final TestWorkspace workspace;
     private final SecurityHandlerRegistry handlers;
     private final VariableResolver variables;
     private final MockCallStore calls;
 
-    HttpMockEngine(WorkspaceService workspace, SecurityHandlerRegistry handlers,
+    HttpMockEngine(MockWorkspace mockWorkspace, SecurityHandlerRegistry handlers,
                    VariableResolver variables, MockCallStore calls) {
-        this.workspace = workspace;
+        this.mockWorkspace = mockWorkspace;
+        this.workspace = mockWorkspace.files();
         this.handlers = handlers;
         this.variables = variables;
         this.calls = calls;
@@ -46,7 +48,7 @@ class HttpMockEngine {
 
     MockExchange execute(HttpServletRequest servletRequest, byte[] requestBody) {
         RequestSnapshot request = snapshot(servletRequest, requestBody);
-        MockDefinition mock = workspace.mocks().stream()
+        MockDefinition mock = mockWorkspace.definitions().stream()
                 .filter(this::isHttp)
                 .filter(item -> matches(item, servletRequest, request))
                 .findFirst().orElse(null);
@@ -65,7 +67,9 @@ class HttpMockEngine {
         delay(mock.response().delayMs());
         byte[] body = responseBody(mock, request, context.variables());
         MutableResponse response = new MutableResponse(status(mock), mock.response().headers(), body);
-        response.headers().putIfAbsent("Content-Type", "application/json");
+        if (mock.response().body() != null) {
+            putIfAbsentIgnoreCase(response.headers(), "Content-Type", "application/json");
+        }
         handler.signMockResponse(context, request, response);
 
         List<CallbackTask> callbacks = mock.afterResponse() == null ? List.of()
@@ -129,7 +133,7 @@ class HttpMockEngine {
         try {
             Map<String, String> values = requestVariables(request, baseVariables);
             if (mock.response().bodyFile() != null) {
-                return variables.resolve(new String(workspace.bodyFile(mock.response().bodyFile()), StandardCharsets.UTF_8), values)
+                return variables.resolve(new String(workspace.fileBytes(mock.response().bodyFile()), StandardCharsets.UTF_8), values)
                         .getBytes(StandardCharsets.UTF_8);
             }
             JsonNode resolved = variables.resolve(mock.response().body(), values);
