@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -40,6 +41,23 @@ public final class TestWorkspace {
 
     public EnvironmentConfig environment(String name) {
         return readNamedYaml("environments", name, EnvironmentConfig.class);
+    }
+
+    public EnvironmentContext environmentContext(String name) {
+        return environmentContext(name, Map.of());
+    }
+
+    /** Resolves variables in workspace -> environment -> invocation order. */
+    public EnvironmentContext environmentContext(String name, Map<String, ?> overrides) {
+        EnvironmentConfig environment = environment(name);
+        Map<String, String> values = new LinkedHashMap<>();
+        WorkspaceConfig workspaceConfig = config();
+        if (workspaceConfig.variables() != null) values.putAll(workspaceConfig.variables());
+        if (environment.variables() != null) values.putAll(environment.variables());
+        if (overrides != null) {
+            overrides.forEach((key, value) -> values.put(key, value == null ? "" : String.valueOf(value)));
+        }
+        return new EnvironmentContext(environment, values, secrets(environment.secretRef()));
     }
 
     public Map<String, String> secrets(String secretRef) {

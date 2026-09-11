@@ -10,8 +10,7 @@ import io.github.localtools.testtools.security.VerificationResult;
 import io.github.localtools.testtools.security.crypto.HmacSha256;
 
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
+import io.github.localtools.testtools.security.crypto.ConstantTime;
 import java.util.Arrays;
 import java.util.stream.Collectors;
 
@@ -59,7 +58,6 @@ public final class QueryBodyHmacSecurityHandler implements HttpSecurityHandler {
     }
 
     private boolean secureEquals(String expected, String actual) {
-        return actual != null && MessageDigest.isEqual(
-                expected.getBytes(StandardCharsets.UTF_8), actual.getBytes(StandardCharsets.UTF_8));
+        return ConstantTime.equalsUtf8(expected, actual);
     }
 }

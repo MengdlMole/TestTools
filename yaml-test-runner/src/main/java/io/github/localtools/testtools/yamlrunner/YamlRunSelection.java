@@ -1,10 +1,10 @@
 package io.github.localtools.testtools.yamlrunner;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
+import io.github.localtools.testtools.workspace.WorkspaceLocator;
 
 final class YamlRunSelection {
-    static Path workspace = workspaceFromSystemProperty();
+    static Path workspace = WorkspaceLocator.locate(null);
     static String caseName = textProperty("testtools.case");
     static String suiteName = textProperty("testtools.suite");
 
@@ -14,18 +14,6 @@ final class YamlRunSelection {
         if (caseName != null && suiteName != null) {
             throw new IllegalArgumentException("Use either a case or a suite, not both");
         }
-    }
-
-    private static Path workspaceFromSystemProperty() {
-        String configured = textProperty("testtools.workspace");
-        if (configured != null) return Path.of(configured).toAbsolutePath().normalize();
-
-        Path current = Path.of("").toAbsolutePath().normalize();
-        for (Path candidate = current; candidate != null; candidate = candidate.getParent()) {
-            Path workspace = candidate.resolve("test-workspace");
-            if (Files.isRegularFile(workspace.resolve("workspace.yaml"))) return workspace;
-        }
-        return current.resolve("test-workspace");
     }
 
     private static String textProperty(String name) {

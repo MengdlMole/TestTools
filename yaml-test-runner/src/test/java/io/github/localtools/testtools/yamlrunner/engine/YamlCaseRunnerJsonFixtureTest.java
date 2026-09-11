@@ -74,6 +74,26 @@ class YamlCaseRunnerJsonFixtureTest {
         assertEquals(2, executor.bodies.size());
     }
 
+    @Test
+    void rawBodyFileKeepsExplicitMediaTypeAndUsesSharedUriAssembly() throws Exception {
+        Files.createDirectories(root.resolve("fixtures/raw"));
+        Files.writeString(root.resolve("fixtures/raw/message.txt"), "hello ${tenantId}");
+        writeCase("raw-body", """
+                path: /echo?existing=true#response
+                    query:
+                      name: hello world
+                    headers:
+                      Content-Type: text/plain
+                    bodyFile: fixtures/raw/message.txt
+                """);
+
+        assertTrue(runner.run("raw-body").success());
+        assertEquals("hello T1001", new String(executor.bodies.getFirst(), StandardCharsets.UTF_8));
+        assertEquals("text/plain", executor.headers.getFirst().get("Content-Type"));
+        assertEquals("http://localhost/echo?existing=true&name=hello+world#response",
+                executor.uris.getFirst());
+    }
+
     private void writeCase(String name, String bodySource) throws Exception {
         Files.writeString(root.resolve("cases").resolve(name + ".yaml"), """
                 name: fixture test
@@ -81,17 +101,21 @@ class YamlCaseRunnerJsonFixtureTest {
                 steps:
                   - name: send
                     method: POST
-                    path: /echo
                     %s
-                """.formatted(bodySource));
+                    %s
+                """.formatted(bodySource.contains("path:") ? "" : "path: /echo", bodySource));
     }
 
     private static final class CapturingExecutor extends HttpExecutor {
         private final List<byte[]> bodies = new ArrayList<>();
+        private final List<Map<String, String>> headers = new ArrayList<>();
+        private final List<String> uris = new ArrayList<>();
 
         @Override
         public Exchange execute(MutableRequest request, Duration timeout) {
             bodies.add(request.body().clone());
+            headers.add(Map.copyOf(request.headers()));
+            uris.add(request.uri().toString());
             RequestSnapshot sent = new RequestSnapshot(request.method(), request.uri(),
                     Map.of(), request.body().clone());
             ResponseSnapshot response = new ResponseSnapshot(200, Map.of(),

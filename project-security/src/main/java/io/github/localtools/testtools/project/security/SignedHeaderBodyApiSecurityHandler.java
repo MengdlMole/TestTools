@@ -9,8 +9,7 @@ import io.github.localtools.testtools.security.SignContext;
 import io.github.localtools.testtools.security.VerificationResult;
 import io.github.localtools.testtools.security.crypto.HmacSha256;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
+import io.github.localtools.testtools.security.crypto.ConstantTime;
 import java.util.Map;
 
 /**
@@ -92,7 +91,6 @@ public final class SignedHeaderBodyApiSecurityHandler implements HttpSecurityHan
     }
 
     private boolean secureEquals(String expected, String actual) {
-        return actual != null && MessageDigest.isEqual(
-                expected.getBytes(StandardCharsets.UTF_8), actual.getBytes(StandardCharsets.UTF_8));
+        return ConstantTime.equalsUtf8(expected, actual);
     }
 }

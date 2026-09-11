@@ -10,7 +10,7 @@ import io.github.localtools.testtools.security.SignContext;
 import io.github.localtools.testtools.security.VerificationResult;
 import io.github.localtools.testtools.mock.config.MockWorkspace;
 import io.github.localtools.testtools.mock.model.MockDefinition;
-import io.github.localtools.testtools.workspace.EnvironmentConfig;
+import io.github.localtools.testtools.workspace.EnvironmentContext;
 import io.github.localtools.testtools.workspace.TestWorkspace;
 import io.github.localtools.testtools.workspace.WorkspaceConfig;
 import jakarta.servlet.http.HttpServletRequest;
@@ -154,11 +154,8 @@ class HttpMockEngine {
 
     private SignContext signContext() {
         WorkspaceConfig config = workspace.config();
-        EnvironmentConfig environment = workspace.environment(config.defaultEnvironment());
-        Map<String, String> values = new LinkedHashMap<>();
-        if (config.variables() != null) values.putAll(config.variables());
-        if (environment.variables() != null) values.putAll(environment.variables());
-        return new SignContext(values, workspace.secrets(environment.secretRef()));
+        EnvironmentContext context = workspace.environmentContext(config.defaultEnvironment());
+        return new SignContext(context.variables(), context.secrets());
     }
 
     private void delay(Long delayMs) {

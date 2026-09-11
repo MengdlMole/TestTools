@@ -6,7 +6,7 @@
 - 多个用例使用，或调用侧与 Mock 侧都需要：在 `project-security` 实现 `HttpSecurityHandler`。
 - 不要把具体 API 的字段顺序和拼接规则放进 core。
 
-core 提供 `HmacSha256.signHex(...)`、`signBase64(...)` 和返回原始字节的 `sign(...)`。正式的可复用处理器应调用这些方法，避免重复处理算法名称、UTF-8 和输出编码。`SigningExamples` 仍保留一份直接使用 `Mac` 的本地实现，用于演示单个用例完全自包含时如何调试和修改。
+core 提供 `HmacSha256.signHex(...)`、`signBase64(...)`、返回原始字节的 `sign(...)`，以及用于校验认证值的 `ConstantTime.equalsUtf8(...)`。正式的可复用处理器应调用这些方法，避免重复处理算法名称、UTF-8、输出编码和安全比较。`SigningExamples` 仍保留一份直接使用 `Mac` 的本地实现，用于演示单个用例完全自包含时如何调试和修改。
 
 ## 用例内签名
 
@@ -74,7 +74,7 @@ public final class OrderApiSecurityHandler implements HttpSecurityHandler {
     public VerificationResult verifyMockRequest(SignContext context, RequestSnapshot request) {
         String expected = HmacSha256.signHex(
                 context.secret("appSecret"), buildMockSignData(request));
-        return expected.equals(request.firstHeader("X-Signature"))
+        return ConstantTime.equalsUtf8(expected, request.firstHeader("X-Signature"))
                 ? VerificationResult.ok()
                 : VerificationResult.failed("request signature mismatch");
     }

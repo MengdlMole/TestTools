@@ -236,6 +236,8 @@ test-workspace/
 └── results/                       运行结果；不提交
 ```
 
+未显式指定工作区时，JUnit、YAML runner 和 Mock Server 都会从当前目录向上查找 `test-workspace/workspace.yaml`。也可以通过 `-Dtesttools.workspace=/绝对路径` 指定；可执行 jar 的 `--workspace` 参数优先级最高。
+
 ## 文档索引
 
 - [架构、模块边界和命名约定](docs/architecture.md)

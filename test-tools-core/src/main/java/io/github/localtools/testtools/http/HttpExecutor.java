@@ -22,16 +22,17 @@ public class HttpExecutor {
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder(request.uri()).timeout(timeout);
             request.headers().forEach(builder::header);
-            HttpRequest.BodyPublisher body = request.body().length == 0
+            byte[] requestBody = request.body();
+            HttpRequest.BodyPublisher body = requestBody.length == 0
                     ? HttpRequest.BodyPublishers.noBody()
-                    : HttpRequest.BodyPublishers.ofByteArray(request.body());
+                    : HttpRequest.BodyPublishers.ofByteArray(requestBody);
             builder.method(request.method(), body);
             long started = System.nanoTime();
             HttpResponse<byte[]> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
             long duration = Duration.ofNanos(System.nanoTime() - started).toMillis();
             Map<String, List<String>> requestHeaders = request.headers().entrySet().stream()
                     .collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, e -> List.of(e.getValue())));
-            RequestSnapshot requestSnapshot = new RequestSnapshot(request.method(), request.uri(), requestHeaders, request.body());
+            RequestSnapshot requestSnapshot = new RequestSnapshot(request.method(), request.uri(), requestHeaders, requestBody);
             ResponseSnapshot responseSnapshot = new ResponseSnapshot(
                     response.statusCode(), response.headers().map(), response.body(), duration);
             return new Exchange(requestSnapshot, responseSnapshot);

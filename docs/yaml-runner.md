@@ -31,7 +31,9 @@ steps:
         expected: CREATED
 ```
 
-用例级 body 放在 `test-workspace/fixtures/cases/create-order/request.json`；全局 body 使用 `globalBodyFile` 并放在 `fixtures/global/`。`body`、`bodyFile`、`globalBodyFile`、`caseBodyFile` 只能选择一个。
+用例级 JSON body 放在 `test-workspace/fixtures/cases/create-order/request.json`；全局 JSON body 使用 `globalBodyFile` 并放在 `fixtures/global/`。`body`、`globalBodyFile` 和 `caseBodyFile` 会默认添加 `Content-Type: application/json`。
+
+`bodyFile` 用于读取工作区内的原始文本或其他自定义格式，不假定内容为 JSON，应在 `headers` 中明确设置相应的 `Content-Type`。四种 body 来源只能选择一个。
 
 ## 新增 suite
 

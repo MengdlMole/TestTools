@@ -5,8 +5,16 @@ import java.util.Map;
 public final class HttpHeaderSupport {
     private HttpHeaderSupport() {}
 
+    public static boolean containsIgnoreCase(Map<String, ?> headers, String name) {
+        return headers.keySet().stream().anyMatch(name::equalsIgnoreCase);
+    }
+
+    public static void putReplacingIgnoreCase(Map<String, String> headers, String name, String value) {
+        headers.keySet().removeIf(name::equalsIgnoreCase);
+        headers.put(name, value);
+    }
+
     public static void putIfAbsentIgnoreCase(Map<String, String> headers, String name, String value) {
-        boolean present = headers.keySet().stream().anyMatch(name::equalsIgnoreCase);
-        if (!present) headers.put(name, value);
+        if (!containsIgnoreCase(headers, name)) headers.put(name, value);
     }
 }

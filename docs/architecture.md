@@ -44,4 +44,6 @@
 - `yaml-runner.yaml`：仅 YAML runner 使用的签名路由等配置。
 - `environments/`、`secrets/`、`fixtures/`：调用侧和 Mock 侧可共享。
 
+JUnit、YAML runner 和 Mock Server 通过 core 的 `WorkspaceLocator` 使用同一套工作区定位规则，并通过 `TestWorkspace.environmentContext(...)` 使用相同的变量覆盖顺序。HTTP URL 与 query 的基础组装同样由 core 统一；用例编排、断言、Mock 匹配和具体 API 签名规则仍留在各自模块。
+
 新增协议时建议增加独立模块，例如 `dubbo-test-adapter`，实现自己的客户端、用例模型或 Mock 适配；不要向 HTTP 类中持续增加 `if (protocol)` 分支。

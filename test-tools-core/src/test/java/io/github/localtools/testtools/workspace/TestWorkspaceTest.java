@@ -5,6 +5,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -51,6 +53,56 @@ class TestWorkspaceTest {
 
         assertThrows(IllegalArgumentException.class,
                 () -> new TestWorkspace(root).globalJsonFile("request.json"));
+    }
+
+    @Test
+    void resolvesEnvironmentVariablesAndSecretsWithDocumentedPrecedence() throws Exception {
+        Files.createDirectories(root.resolve("environments"));
+        Files.createDirectories(root.resolve("secrets"));
+        Files.writeString(root.resolve("workspace.yaml"), """
+                defaultEnvironment: local
+                variables:
+                  shared: workspace
+                  workspaceOnly: one
+                """);
+        Files.writeString(root.resolve("environments/local.yaml"), """
+                name: local
+                baseUrl: http://localhost
+                secretRef: demo
+                variables:
+                  shared: environment
+                  environmentOnly: two
+                """);
+        Files.writeString(root.resolve("secrets/local-secrets.yaml"), """
+                secrets:
+                  demo:
+                    appSecret: secret
+                """);
+        Map<String, Object> overrides = new LinkedHashMap<>();
+        overrides.put("shared", "invocation");
+        overrides.put("empty", null);
+
+        EnvironmentContext context = new TestWorkspace(root).environmentContext("local", overrides);
+
+        assertEquals("invocation", context.variables().get("shared"));
+        assertEquals("one", context.variables().get("workspaceOnly"));
+        assertEquals("two", context.variables().get("environmentOnly"));
+        assertEquals("", context.variables().get("empty"));
+        assertEquals("secret", context.secrets().get("appSecret"));
+        assertThrows(UnsupportedOperationException.class,
+                () -> context.variables().put("other", "value"));
+    }
+
+    @Test
+    void explicitWorkspaceLocationOverridesSystemProperty(@TempDir Path explicit) {
+        String previous = System.getProperty("testtools.workspace");
+        try {
+            System.setProperty("testtools.workspace", root.toString());
+            assertEquals(explicit.toAbsolutePath().normalize(), WorkspaceLocator.locate(explicit.toString()));
+        } finally {
+            if (previous == null) System.clearProperty("testtools.workspace");
+            else System.setProperty("testtools.workspace", previous);
+        }
     }
 
     private record NamedConfig(String name) {}

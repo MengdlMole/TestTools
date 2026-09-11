@@ -3,6 +3,8 @@ package io.github.localtools.testtools.yamlrunner.engine;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jayway.jsonpath.JsonPath;
 import io.github.localtools.testtools.http.HttpExecutor;
+import io.github.localtools.testtools.http.HttpHeaderSupport;
+import io.github.localtools.testtools.http.HttpRequestUriBuilder;
 import io.github.localtools.testtools.http.MutableRequest;
 import io.github.localtools.testtools.http.SensitiveDataMasker;
 import io.github.localtools.testtools.workspace.VariableResolver;
@@ -16,13 +18,12 @@ import io.github.localtools.testtools.security.HttpSecurityHandler;
 import io.github.localtools.testtools.security.SignContext;
 import io.github.localtools.testtools.security.VerificationResult;
 import io.github.localtools.testtools.workspace.EnvironmentConfig;
+import io.github.localtools.testtools.workspace.EnvironmentContext;
 import io.github.localtools.testtools.workspace.TestWorkspace;
 import io.github.localtools.testtools.workspace.WorkspaceConfig;
 import io.github.localtools.testtools.yamlrunner.model.YamlCaseDefinition;
 import io.github.localtools.testtools.yamlrunner.model.YamlStepDefinition;
 
-import java.net.URI;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -54,12 +55,10 @@ public final class YamlCaseRunner {
         WorkspaceConfig config = workspace.config();
         YamlCaseDefinition testCase = yamlWorkspace.testCase(caseName);
         String environmentName = text(testCase.environment(), config.defaultEnvironment());
-        EnvironmentConfig environment = workspace.environment(environmentName);
-        Map<String, String> values = new LinkedHashMap<>();
-        putAll(values, config.variables());
-        putAll(values, environment.variables());
-        putAll(values, testCase.variables());
-        Map<String, String> secrets = workspace.secrets(environment.secretRef());
+        EnvironmentContext environmentContext = workspace.environmentContext(environmentName, testCase.variables());
+        EnvironmentConfig environment = environmentContext.environment();
+        Map<String, String> values = new LinkedHashMap<>(environmentContext.variables());
+        Map<String, String> secrets = environmentContext.secrets();
         SignContext signContext = new SignContext(values, secrets);
         List<StepResult> stepResults = new ArrayList<>();
         boolean success = true;
@@ -104,23 +103,22 @@ public final class YamlCaseRunner {
     private MutableRequest createRequest(String caseName, EnvironmentConfig environment,
                                          YamlStepDefinition step, Map<String, String> values) {
         String path = variables.resolve(step.path(), values);
-        StringBuilder url = new StringBuilder(environment.baseUrl()).append(path);
-        if (step.query() != null && !step.query().isEmpty()) {
-            url.append('?');
-            step.query().forEach((key, value) -> url.append(encode(key)).append('=')
-                    .append(encode(variables.resolve(value, values))).append('&'));
-            url.setLength(url.length() - 1);
-        }
+        List<HttpRequestUriBuilder.QueryParameter> query = step.query() == null ? List.of()
+                : step.query().entrySet().stream()
+                .map(entry -> new HttpRequestUriBuilder.QueryParameter(entry.getKey(),
+                        variables.resolve(entry.getValue(), values)))
+                .toList();
         Map<String, String> headers = new LinkedHashMap<>();
         if (step.headers() != null) step.headers().forEach((key, value) -> headers.put(key, variables.resolve(value, values)));
-        byte[] body = body(caseName, step, values);
-        if (body.length > 0 && headers.keySet().stream().noneMatch("Content-Type"::equalsIgnoreCase)) {
-            headers.put("Content-Type", "application/json");
+        BodyContent body = body(caseName, step, values);
+        if (body.json() && body.bytes().length > 0) {
+            HttpHeaderSupport.putIfAbsentIgnoreCase(headers, "Content-Type", "application/json");
         }
-        return new MutableRequest(text(step.method(), "GET").toUpperCase(), URI.create(url.toString()), headers, body);
+        return new MutableRequest(text(step.method(), "GET").toUpperCase(),
+                HttpRequestUriBuilder.build(environment.baseUrl(), path, query), headers, body.bytes());
     }
 
-    private byte[] body(String caseName, YamlStepDefinition step, Map<String, String> values) {
+    private BodyContent body(String caseName, YamlStepDefinition step, Map<String, String> values) {
         try {
             rejectBlank("bodyFile", step.bodyFile());
             rejectBlank("globalBodyFile", step.globalBodyFile());
@@ -133,17 +131,18 @@ public final class YamlCaseRunner {
                 throw new IllegalArgumentException("Only one of body, bodyFile, globalBodyFile and caseBodyFile may be used");
             }
             if (hasText(step.globalBodyFile())) {
-                return resolvedJson(workspace.globalJsonFile(step.globalBodyFile()), values);
+                return new BodyContent(resolvedJson(workspace.globalJsonFile(step.globalBodyFile()), values), true);
             }
             if (hasText(step.caseBodyFile())) {
-                return resolvedJson(workspace.caseJsonFile(caseName, step.caseBodyFile()), values);
+                return new BodyContent(resolvedJson(workspace.caseJsonFile(caseName, step.caseBodyFile()), values), true);
             }
             if (hasText(step.bodyFile())) {
-                return variables.resolve(new String(workspace.fileBytes(step.bodyFile()), StandardCharsets.UTF_8), values)
-                        .getBytes(StandardCharsets.UTF_8);
+                return new BodyContent(variables.resolve(
+                        new String(workspace.fileBytes(step.bodyFile()), StandardCharsets.UTF_8), values)
+                        .getBytes(StandardCharsets.UTF_8), false);
             }
             JsonNode body = variables.resolve(step.body(), values);
-            return body == null ? new byte[0] : workspace.jsonMapper().writeValueAsBytes(body);
+            return new BodyContent(body == null ? new byte[0] : workspace.jsonMapper().writeValueAsBytes(body), body != null);
         } catch (Exception e) {
             throw new IllegalArgumentException("Cannot build body for step " + step.name(), e);
         }
@@ -162,7 +161,6 @@ public final class YamlCaseRunner {
         });
     }
 
-    private String encode(String value) { return URLEncoder.encode(value, StandardCharsets.UTF_8); }
     private boolean hasText(String value) { return value != null && !value.isBlank(); }
     private void rejectBlank(String name, String value) {
         if (value != null && value.isBlank()) throw new IllegalArgumentException(name + " must not be blank");
@@ -173,7 +171,7 @@ public final class YamlCaseRunner {
         }
     }
     private String text(String value, String fallback) { return value == null || value.isBlank() ? fallback : value; }
-    private void putAll(Map<String, String> target, Map<String, String> source) { if (source != null) target.putAll(source); }
+    private record BodyContent(byte[] bytes, boolean json) {}
 
     private Map<String, String> mask(Map<String, String> headers) {
         return SensitiveDataMasker.maskHeaders(headers);

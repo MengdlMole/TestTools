@@ -3,6 +3,8 @@ package io.github.localtools.testtools.security.crypto;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class HmacSha256Test {
@@ -21,5 +23,12 @@ class HmacSha256Test {
     void rejectsNullInputsExplicitly() {
         assertThrows(NullPointerException.class, () -> HmacSha256.signHex(null, "content"));
         assertThrows(NullPointerException.class, () -> HmacSha256.signHex("secret", null));
+    }
+
+    @Test
+    void comparesAuthenticationValuesWithoutNullSpecialCases() {
+        assertTrue(ConstantTime.equalsUtf8("signature", "signature"));
+        assertFalse(ConstantTime.equalsUtf8("signature", "different"));
+        assertFalse(ConstantTime.equalsUtf8("signature", null));
     }
 }

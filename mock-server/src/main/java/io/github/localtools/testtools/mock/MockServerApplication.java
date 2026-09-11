@@ -6,6 +6,7 @@ import io.github.localtools.testtools.security.SecurityHandlerLoader;
 import io.github.localtools.testtools.security.SecurityHandlerRegistry;
 import io.github.localtools.testtools.mock.config.MockWorkspace;
 import io.github.localtools.testtools.workspace.TestWorkspace;
+import io.github.localtools.testtools.workspace.WorkspaceLocator;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -21,7 +22,7 @@ import java.util.Map;
 @SpringBootApplication
 public class MockServerApplication {
     public static void main(String[] args) {
-        Path workspacePath = argument(args, "--workspace", "test-workspace").toAbsolutePath().normalize();
+        Path workspacePath = WorkspaceLocator.locate(argument(args, "--workspace"));
         MockWorkspace workspace = new MockWorkspace(new TestWorkspace(workspacePath));
         int port = workspace.config().resolvedPort();
 
@@ -56,11 +57,11 @@ public class MockServerApplication {
         return scheduler;
     }
 
-    private static Path argument(String[] args, String name, String fallback) {
+    private static String argument(String[] args, String name) {
         for (int i = 0; i < args.length - 1; i++) {
-            if (name.equals(args[i])) return Path.of(args[i + 1]);
+            if (name.equals(args[i])) return args[i + 1];
         }
-        return Path.of(fallback);
+        return null;
     }
 
     private static String[] withoutWorkspaceArgument(String[] args) {

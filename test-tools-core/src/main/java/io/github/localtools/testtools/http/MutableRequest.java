@@ -15,7 +15,7 @@ public final class MutableRequest {
         this.method = method;
         this.uri = uri;
         this.headers = new LinkedHashMap<>(headers == null ? Map.of() : headers);
-        this.body = body == null ? new byte[0] : body;
+        this.body = body == null ? new byte[0] : body.clone();
     }
 
     public String method() { return method; }
@@ -23,10 +23,9 @@ public final class MutableRequest {
     public void uri(URI uri) { this.uri = uri; }
     public Map<String, String> headers() { return headers; }
     public void header(String name, String value) {
-        headers.keySet().removeIf(key -> key.equalsIgnoreCase(name));
-        headers.put(name, value);
+        HttpHeaderSupport.putReplacingIgnoreCase(headers, name, value);
     }
-    public byte[] body() { return body; }
+    public byte[] body() { return body.clone(); }
     public String bodyText() { return new String(body, StandardCharsets.UTF_8); }
-    public void body(byte[] body) { this.body = body == null ? new byte[0] : body; }
+    public void body(byte[] body) { this.body = body == null ? new byte[0] : body.clone(); }
 }

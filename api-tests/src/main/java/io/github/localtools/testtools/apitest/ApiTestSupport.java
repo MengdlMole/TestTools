@@ -10,10 +10,10 @@ import io.github.localtools.testtools.security.SignContext;
 import io.github.localtools.testtools.workspace.EnvironmentConfig;
 import io.github.localtools.testtools.workspace.TestWorkspace;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashMap;
 import java.util.Map;
+import io.github.localtools.testtools.workspace.EnvironmentContext;
+import io.github.localtools.testtools.workspace.WorkspaceLocator;
 
 /** Common setup helpers for code-first JUnit API test classes. */
 public abstract class ApiTestSupport {
@@ -37,11 +37,8 @@ public abstract class ApiTestSupport {
     }
 
     protected final SignContext signContext(String environmentName) {
-        EnvironmentConfig environment = workspace().environment(environmentName);
-        Map<String, String> variables = new LinkedHashMap<>();
-        if (workspace().config().variables() != null) variables.putAll(workspace().config().variables());
-        if (environment.variables() != null) variables.putAll(environment.variables());
-        return new SignContext(Map.copyOf(variables), workspace().secrets(environment.secretRef()));
+        EnvironmentContext context = workspace().environmentContext(environmentName);
+        return new SignContext(context.variables(), context.secrets());
     }
 
     protected final String secret(String environmentName, String name) {
@@ -84,31 +81,12 @@ public abstract class ApiTestSupport {
     }
 
     private JsonNode resolvedJson(String environmentName, Path path, Map<String, ?> overrides) {
-        EnvironmentConfig environment = workspace().environment(environmentName);
-        Map<String, String> values = new LinkedHashMap<>();
-        if (workspace().config().variables() != null) values.putAll(workspace().config().variables());
-        if (environment.variables() != null) values.putAll(environment.variables());
-        if (overrides != null) {
-            overrides.forEach((name, value) -> values.put(name, value == null ? "" : String.valueOf(value)));
-        }
-        return new VariableResolver(workspace().jsonMapper()).resolve(workspace().readJson(path), values);
+        EnvironmentContext context = workspace().environmentContext(environmentName, overrides);
+        return new VariableResolver(workspace().jsonMapper()).resolve(workspace().readJson(path), context.variables());
     }
 
     protected final TestWorkspace workspace() {
-        if (workspace == null) workspace = new TestWorkspace(workspacePath());
+        if (workspace == null) workspace = new TestWorkspace(WorkspaceLocator.locate(null));
         return workspace;
-    }
-
-    private Path workspacePath() {
-        String configured = System.getProperty("testtools.workspace");
-        if (configured != null && !configured.isBlank()) {
-            return Path.of(configured.trim()).toAbsolutePath().normalize();
-        }
-        Path current = Path.of("").toAbsolutePath().normalize();
-        for (Path candidate = current; candidate != null; candidate = candidate.getParent()) {
-            Path workspace = candidate.resolve("test-workspace");
-            if (Files.isRegularFile(workspace.resolve("workspace.yaml"))) return workspace;
-        }
-        return current.resolve("test-workspace");
     }
 }

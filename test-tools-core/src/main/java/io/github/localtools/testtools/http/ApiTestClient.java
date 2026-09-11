@@ -8,7 +8,6 @@ import io.github.localtools.testtools.security.SignContext;
 import io.github.localtools.testtools.security.VerificationResult;
 
 import java.net.URI;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -30,7 +29,7 @@ public final class ApiTestClient {
     private final int bodyLogLimit;
 
     private ApiTestClient(Builder builder) {
-        this.baseUrl = stripTrailingSlash(builder.baseUrl);
+        this.baseUrl = builder.baseUrl.trim();
         this.defaultHeaders = Map.copyOf(builder.defaultHeaders);
         this.defaultTimeout = builder.timeout;
         this.mapper = builder.mapper;
@@ -50,7 +49,7 @@ public final class ApiTestClient {
     public final class Request {
         private final String method;
         private final String pathOrUrl;
-        private final List<QueryParameter> query = new ArrayList<>();
+        private final List<HttpRequestUriBuilder.QueryParameter> query = new ArrayList<>();
         private final Map<String, String> headers = new LinkedHashMap<>(defaultHeaders);
         private final List<RequestSigner> signers = new ArrayList<>();
         private byte[] body = new byte[0];
@@ -66,7 +65,7 @@ public final class ApiTestClient {
 
         public Request query(String name, Object value) {
             if (name == null || name.isBlank()) throw new IllegalArgumentException("Query name is required");
-            query.add(new QueryParameter(name, value == null ? "" : String.valueOf(value)));
+            query.add(new HttpRequestUriBuilder.QueryParameter(name, value == null ? "" : String.valueOf(value)));
             return this;
         }
 
@@ -77,7 +76,7 @@ public final class ApiTestClient {
 
         public Request header(String name, Object value) {
             if (name == null || name.isBlank()) throw new IllegalArgumentException("Header name is required");
-            putHeader(headers, name, value == null ? "" : String.valueOf(value));
+            HttpHeaderSupport.putReplacingIgnoreCase(headers, name, value == null ? "" : String.valueOf(value));
             return this;
         }
 
@@ -104,9 +103,7 @@ public final class ApiTestClient {
         public Request jsonBody(Object value) {
             try {
                 body = value == null ? new byte[0] : mapper.writeValueAsBytes(value);
-                if (body.length > 0 && !containsHeader(headers, "Content-Type")) {
-                    headers.put("Content-Type", "application/json");
-                }
+                if (body.length > 0) HttpHeaderSupport.putIfAbsentIgnoreCase(headers, "Content-Type", "application/json");
                 return this;
             } catch (Exception error) {
                 throw new IllegalArgumentException("Cannot serialize JSON request body", error);
@@ -123,7 +120,7 @@ public final class ApiTestClient {
                 JsonNode parsed = mapper.readTree(content);
                 if (parsed == null) throw new IllegalArgumentException("JSON request body must not be empty: " + file);
                 body = content;
-                if (!containsHeader(headers, "Content-Type")) headers.put("Content-Type", "application/json");
+                HttpHeaderSupport.putIfAbsentIgnoreCase(headers, "Content-Type", "application/json");
                 return this;
             } catch (IllegalArgumentException error) {
                 throw error;
@@ -156,7 +153,8 @@ public final class ApiTestClient {
         }
 
         public ApiResponse execute() {
-            MutableRequest request = new MutableRequest(method, requestUri(pathOrUrl, query), headers, body);
+            MutableRequest request = new MutableRequest(method,
+                    HttpRequestUriBuilder.build(baseUrl, pathOrUrl, query), headers, body);
             signers.forEach(signer -> signer.sign(request));
 
             log("--> " + request.method() + " " + SensitiveDataMasker.maskUri(request.uri()));
@@ -196,8 +194,6 @@ public final class ApiTestClient {
         }
     }
 
-    private record QueryParameter(String name, String value) {}
-
     public record ApiResponse(RequestSnapshot request, ResponseSnapshot response,
                               VerificationResult verification, ObjectMapper mapper) {
         public int status() { return response.status(); }
@@ -231,7 +227,7 @@ public final class ApiTestClient {
         }
         public Builder defaultHeader(String name, String value) {
             if (name == null || name.isBlank()) throw new IllegalArgumentException("Header name is required");
-            putHeader(defaultHeaders, name, value == null ? "" : value);
+            HttpHeaderSupport.putReplacingIgnoreCase(defaultHeaders, name, value == null ? "" : value);
             return this;
         }
         public Builder timeout(Duration value) {
@@ -250,40 +246,11 @@ public final class ApiTestClient {
         public ApiTestClient build() { return new ApiTestClient(this); }
     }
 
-    private URI requestUri(String pathOrUrl, List<QueryParameter> query) {
-        String url = pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")
-                ? pathOrUrl : baseUrl + (pathOrUrl.startsWith("/") ? pathOrUrl : "/" + pathOrUrl);
-        if (!query.isEmpty()) {
-            int fragmentIndex = url.indexOf('#');
-            String fragment = fragmentIndex < 0 ? "" : url.substring(fragmentIndex);
-            String target = fragmentIndex < 0 ? url : url.substring(0, fragmentIndex);
-            String separator = target.contains("?") ? "&" : "?";
-            String queryString = query.stream()
-                    .map(entry -> encode(entry.name()) + "=" + encode(entry.value()))
-                    .collect(java.util.stream.Collectors.joining("&"));
-            url = target + separator + queryString + fragment;
-        }
-        return URI.create(url);
-    }
-
     private String bodyForLog(String value) {
         if (bodyLogLimit < 0 || value.length() <= bodyLogLimit) return value;
         return value.substring(0, bodyLogLimit) + "... [truncated, total " + value.length() + " chars]";
     }
     private void log(String value) { logger.accept(value); }
-    private static String stripTrailingSlash(String value) {
-        String result = value.trim();
-        while (result.endsWith("/")) result = result.substring(0, result.length() - 1);
-        return result;
-    }
-    private static String encode(String value) { return URLEncoder.encode(value, StandardCharsets.UTF_8); }
-    private static boolean containsHeader(Map<String, String> headers, String name) {
-        return headers.keySet().stream().anyMatch(key -> key.equalsIgnoreCase(name));
-    }
-    private static void putHeader(Map<String, String> headers, String name, String value) {
-        headers.keySet().removeIf(key -> key.equalsIgnoreCase(name));
-        headers.put(name, value);
-    }
     private static Map<String, String> flatten(Map<String, List<String>> headers) {
         Map<String, String> result = new LinkedHashMap<>();
         headers.forEach((key, value) -> result.put(key, String.join(", ", value)));
