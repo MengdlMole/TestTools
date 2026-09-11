@@ -102,6 +102,8 @@ securityHandler: orderApiV1
 
 每个处理器必须有单元测试，至少覆盖正确签名、body 被修改、Header 被修改和缺少密钥。
 
+如果协议发送 appKey，Mock 验签也应验证它，不能只验证摘要。时间戳参与签名时，还应根据真实协议决定是否校验格式和允许的时间偏差；示例 `demoHmacSha256` 要求 epoch 秒并允许前后 5 分钟。
+
 ## YAML runner 选择优先级
 
 1. YAML step 的 `securityHandler`

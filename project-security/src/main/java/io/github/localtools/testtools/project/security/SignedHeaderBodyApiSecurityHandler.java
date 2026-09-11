@@ -7,9 +7,9 @@ import io.github.localtools.testtools.http.RequestSnapshot;
 import io.github.localtools.testtools.security.HttpSecurityHandler;
 import io.github.localtools.testtools.security.SignContext;
 import io.github.localtools.testtools.security.VerificationResult;
+import io.github.localtools.testtools.security.crypto.ConstantTime;
 import io.github.localtools.testtools.security.crypto.HmacSha256;
 
-import io.github.localtools.testtools.security.crypto.ConstantTime;
 import java.util.Map;
 
 /**
@@ -35,12 +35,15 @@ public final class SignedHeaderBodyApiSecurityHandler implements HttpSecurityHan
     public VerificationResult verifyMockRequest(SignContext context, RequestSnapshot request) {
         try {
             requireTarget(request.method(), request.uri().getPath());
+            if (!ConstantTime.equalsUtf8(context.secret("appKey"), request.firstHeader("X-App-Key"))) {
+                return VerificationResult.failed("app key mismatch");
+            }
             String signData = buildSignData(Map.of(
                     "tranId", requiredHeader(request, "tranId"),
                     "timestamp", requiredHeader(request, "timestamp")), request.bodyText());
             String expected = HmacSha256.signHex(context.secret("appSecret"), signData);
             String actual = request.firstHeader("X-Signature");
-            return secureEquals(expected, actual) ? VerificationResult.ok()
+            return ConstantTime.equalsUtf8(expected, actual) ? VerificationResult.ok()
                     : VerificationResult.failed("request signature mismatch");
         } catch (IllegalArgumentException error) {
             return VerificationResult.failed(error.getMessage());
@@ -88,9 +91,5 @@ public final class SignedHeaderBodyApiSecurityHandler implements HttpSecurityHan
         } catch (Exception error) {
             throw new IllegalArgumentException("Request body is not valid JSON", error);
         }
-    }
-
-    private boolean secureEquals(String expected, String actual) {
-        return ConstantTime.equalsUtf8(expected, actual);
     }
 }

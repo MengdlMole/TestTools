@@ -120,16 +120,6 @@ public final class YamlCaseRunner {
 
     private BodyContent body(String caseName, YamlStepDefinition step, Map<String, String> values) {
         try {
-            rejectBlank("bodyFile", step.bodyFile());
-            rejectBlank("globalBodyFile", step.globalBodyFile());
-            rejectBlank("caseBodyFile", step.caseBodyFile());
-            int sources = (step.body() == null ? 0 : 1)
-                    + (hasText(step.bodyFile()) ? 1 : 0)
-                    + (hasText(step.globalBodyFile()) ? 1 : 0)
-                    + (hasText(step.caseBodyFile()) ? 1 : 0);
-            if (sources > 1) {
-                throw new IllegalArgumentException("Only one of body, bodyFile, globalBodyFile and caseBodyFile may be used");
-            }
             if (hasText(step.globalBodyFile())) {
                 return new BodyContent(resolvedJson(workspace.globalJsonFile(step.globalBodyFile()), values), true);
             }
@@ -162,9 +152,6 @@ public final class YamlCaseRunner {
     }
 
     private boolean hasText(String value) { return value != null && !value.isBlank(); }
-    private void rejectBlank(String name, String value) {
-        if (value != null && value.isBlank()) throw new IllegalArgumentException(name + " must not be blank");
-    }
     private void requireHttp(String protocol, String source) {
         if (protocol != null && !protocol.isBlank() && !"http".equalsIgnoreCase(protocol)) {
             throw new IllegalArgumentException("Unsupported protocol '" + protocol + "' in " + source + "; only http is implemented");

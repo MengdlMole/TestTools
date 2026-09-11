@@ -23,7 +23,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class YamlCaseRunnerJsonFixtureTest {
@@ -69,8 +69,8 @@ class YamlCaseRunnerJsonFixtureTest {
         assertEquals("T1001", workspace.jsonMapper().readTree(executor.bodies.get(0)).path("tenantId").asText());
         assertTrue(runner.run("case-json").success());
         assertEquals("case", workspace.jsonMapper().readTree(executor.bodies.get(1)).path("scope").asText());
-        assertFalse(runner.run("conflict").success());
-        assertFalse(runner.run("blank").success());
+        assertThrows(IllegalArgumentException.class, () -> runner.run("conflict"));
+        assertThrows(IllegalArgumentException.class, () -> runner.run("blank"));
         assertEquals(2, executor.bodies.size());
     }
 

@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class DemoHmacSecurityHandlerTest {
     private final DemoHmacSecurityHandler handler = new DemoHmacSecurityHandler();
@@ -36,5 +38,42 @@ class DemoHmacSecurityHandlerTest {
                 mutableResponse.headers().entrySet().stream().collect(java.util.stream.Collectors.toMap(
                         Map.Entry::getKey, entry -> List.of(entry.getValue()))), mutableResponse.body(), 1);
         assertTrue(handler.verifyResponse(context, request, response).success());
+    }
+
+    @Test
+    void rejectsChangedAppKeyBodyAndTimestamp() {
+        MutableRequest outbound = signedRequest();
+
+        outbound.header("X-App-Key", "wrong");
+        assertFalse(handler.verifyMockRequest(context, snapshot(outbound)).success());
+
+        outbound = signedRequest();
+        outbound.body("changed".getBytes(StandardCharsets.UTF_8));
+        assertFalse(handler.verifyMockRequest(context, snapshot(outbound)).success());
+
+        outbound = signedRequest();
+        outbound.header("X-Timestamp", "0");
+        assertFalse(handler.verifyMockRequest(context, snapshot(outbound)).success());
+    }
+
+    @Test
+    void reportsMissingSigningSecret() {
+        MutableRequest request = new MutableRequest("POST", URI.create("http://localhost/signed/echo"),
+                Map.of(), new byte[0]);
+        assertThrows(IllegalArgumentException.class,
+                () -> handler.signRequest(new SignContext(Map.of(), Map.of("appKey", "app")), request));
+    }
+
+    private MutableRequest signedRequest() {
+        MutableRequest request = new MutableRequest("POST", URI.create("http://localhost/signed/echo"),
+                Map.of(), "{}".getBytes(StandardCharsets.UTF_8));
+        handler.signRequest(context, request);
+        return request;
+    }
+
+    private RequestSnapshot snapshot(MutableRequest request) {
+        return new RequestSnapshot(request.method(), request.uri(),
+                request.headers().entrySet().stream().collect(java.util.stream.Collectors.toMap(
+                        Map.Entry::getKey, entry -> List.of(entry.getValue()))), request.body());
     }
 }

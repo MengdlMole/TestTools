@@ -7,10 +7,10 @@ import io.github.localtools.testtools.http.ResponseSnapshot;
 import io.github.localtools.testtools.security.HttpSecurityHandler;
 import io.github.localtools.testtools.security.SignContext;
 import io.github.localtools.testtools.security.VerificationResult;
+import io.github.localtools.testtools.security.crypto.ConstantTime;
 import io.github.localtools.testtools.security.crypto.HmacSha256;
 
 import java.net.URI;
-import io.github.localtools.testtools.security.crypto.ConstantTime;
 import java.util.Arrays;
 import java.util.stream.Collectors;
 
@@ -26,9 +26,12 @@ public final class QueryBodyHmacSecurityHandler implements HttpSecurityHandler {
 
     @Override
     public VerificationResult verifyMockRequest(SignContext context, RequestSnapshot request) {
+        if (!ConstantTime.equalsUtf8(context.secret("appKey"), request.firstHeader("X-App-Key"))) {
+            return VerificationResult.failed("app key mismatch");
+        }
         String expected = signature(context, request.uri(), request.bodyText());
         String actual = request.firstHeader("X-Signature");
-        return secureEquals(expected, actual) ? VerificationResult.ok()
+        return ConstantTime.equalsUtf8(expected, actual) ? VerificationResult.ok()
                 : VerificationResult.failed("request signature mismatch");
     }
 
@@ -42,7 +45,7 @@ public final class QueryBodyHmacSecurityHandler implements HttpSecurityHandler {
                                              ResponseSnapshot response) {
         String expected = HmacSha256.signHex(context.secret("appSecret"), response.bodyText());
         String actual = response.firstHeader("X-Signature");
-        return secureEquals(expected, actual) ? VerificationResult.ok()
+        return ConstantTime.equalsUtf8(expected, actual) ? VerificationResult.ok()
                 : VerificationResult.failed("response signature mismatch");
     }
 
@@ -55,9 +58,5 @@ public final class QueryBodyHmacSecurityHandler implements HttpSecurityHandler {
 
     private String signature(SignContext context, URI uri, String bodyString) {
         return HmacSha256.signHex(context.secret("appSecret"), buildSignData(uri, bodyString));
-    }
-
-    private boolean secureEquals(String expected, String actual) {
-        return ConstantTime.equalsUtf8(expected, actual);
     }
 }

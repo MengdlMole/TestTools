@@ -52,6 +52,8 @@ response:
   bodyFile: fixtures/mock/order-response.json
 ```
 
+`body` 与 `bodyFile` 不能同时配置。Mock Server 每次重新读取文件时都会校验 HTTP Mock 的名称、request、path、response，以及 callback 的 request、URL 和 body 来源；配置错误会返回明确的执行错误，不会静默选择其中一个字段。
+
 ## 请求验签和响应签名
 
 ```yaml

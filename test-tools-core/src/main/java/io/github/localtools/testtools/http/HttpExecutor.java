@@ -36,6 +36,10 @@ public class HttpExecutor {
             ResponseSnapshot responseSnapshot = new ResponseSnapshot(
                     response.statusCode(), response.headers().map(), response.body(), duration);
             return new Exchange(requestSnapshot, responseSnapshot);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new HttpExecutionException("Request interrupted: " + request.method() + " "
+                    + SensitiveDataMasker.maskUri(request.uri()), error);
         } catch (Exception e) {
             throw new HttpExecutionException("Request failed: " + request.method() + " "
                     + SensitiveDataMasker.maskUri(request.uri()), e);

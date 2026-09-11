@@ -35,6 +35,8 @@ steps:
 
 `bodyFile` 用于读取工作区内的原始文本或其他自定义格式，不假定内容为 JSON，应在 `headers` 中明确设置相应的 `Content-Type`。四种 body 来源只能选择一个。
 
+文件在执行前会进行基础结构校验：case 必须有名称和至少一个具名 step，step 必须有 path；suite 必须包含至少一个非空 case 名。校验失败也会由 runner 记录为失败结果。
+
 ## 新增 suite
 
 `test-workspace/suites/order-regression.yaml`：

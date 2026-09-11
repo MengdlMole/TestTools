@@ -13,6 +13,7 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class MockServerApplicationTest {
     @TempDir Path temporary;
@@ -121,6 +122,37 @@ class MockServerApplicationTest {
         assertEquals("plain response", bodyFile.response().bodyText());
         assertFalse(bodyFile.response().headers().keySet().stream()
                 .anyMatch("Content-Type"::equalsIgnoreCase));
+    }
+
+    @Test
+    void rejectsConflictingMockAndCallbackBodySources() throws Exception {
+        Files.createDirectories(temporary.resolve("mocks"));
+        Files.writeString(temporary.resolve("mocks/conflict.yaml"), """
+                name: conflicting bodies
+                request:
+                  path: /conflict
+                response:
+                  body: {status: ok}
+                  bodyFile: fixtures/response.json
+                """);
+
+        MockWorkspace mocks = new MockWorkspace(new TestWorkspace(temporary));
+        assertThrows(IllegalArgumentException.class, mocks::definitions);
+
+        Files.writeString(temporary.resolve("mocks/conflict.yaml"), """
+                name: conflicting callback bodies
+                request:
+                  path: /conflict
+                response:
+                  status: 200
+                afterResponse:
+                  - request:
+                      url: http://localhost/callback
+                      body: {status: ok}
+                      bodyFile: fixtures/callback.json
+                """);
+
+        assertThrows(IllegalArgumentException.class, mocks::definitions);
     }
 
     private static Path locateWorkspace() {
