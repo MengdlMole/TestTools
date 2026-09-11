@@ -28,6 +28,8 @@
 
 ## 包和类型命名
 
+- Maven 坐标统一使用 `io.github.mengdlmole`，Java 根包统一使用 `io.github.mengdlmole.testtools`；其中 `mengdlmole` 对应 GitHub 用户名并按 Java 约定全部小写。
+- 源码目录必须与包名一致，例如 `io.github.mengdlmole.testtools.http` 对应 `src/main/java/io/github/mengdlmole/testtools/http/`。
 - 可持久化定义使用 `Definition`：`YamlCaseDefinition`、`YamlStepDefinition`、`MockDefinition`。
 - 本地配置使用 `Config`：`WorkspaceConfig`、`YamlRunnerConfig`、`MockServerConfig`。
 - 执行动作用 `Runner`、`Engine`、`Dispatcher`：`YamlCaseRunner`、`HttpMockEngine`、`HttpCallbackDispatcher`。

@@ -41,7 +41,7 @@ java -jar mock-server/target/mock-server.jar --workspace test-workspace
 然后在 IDEA 或 VS Code 中打开：
 
 ```text
-api-tests/src/test/java/io/github/localtools/testtools/apitest/BasicApiExamples.java
+api-tests/src/test/java/io/github/mengdlmole/testtools/apitest/BasicApiExamples.java
 ```
 
 点击 `health()` 左侧图标即可单独 Run 或 Debug。IDE 控制台会显示最终 URL、Header、请求体、响应和验签结果。
@@ -81,9 +81,9 @@ secrets:
 在 `api-tests/src/test/java/` 下创建普通 JUnit 5 测试类：
 
 ```java
-package io.github.localtools.testtools.apitest;
+package io.github.mengdlmole.testtools.apitest;
 
-import io.github.localtools.testtools.http.ApiTestClient;
+import io.github.mengdlmole.testtools.http.ApiTestClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

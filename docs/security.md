@@ -85,7 +85,7 @@ public final class OrderApiSecurityHandler implements HttpSecurityHandler {
 
 ```text
 project-security/src/main/resources/
-META-INF/services/io.github.localtools.testtools.security.HttpSecurityHandler
+META-INF/services/io.github.mengdlmole.testtools.security.HttpSecurityHandler
 ```
 
 JUnit 使用：

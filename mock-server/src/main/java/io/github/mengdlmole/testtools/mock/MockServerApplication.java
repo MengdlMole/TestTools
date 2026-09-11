@@ -1,0 +1,75 @@
+package io.github.mengdlmole.testtools.mock;
+
+import io.github.mengdlmole.testtools.http.HttpExecutor;
+import io.github.mengdlmole.testtools.workspace.VariableResolver;
+import io.github.mengdlmole.testtools.security.SecurityHandlerLoader;
+import io.github.mengdlmole.testtools.security.SecurityHandlerRegistry;
+import io.github.mengdlmole.testtools.mock.config.MockWorkspace;
+import io.github.mengdlmole.testtools.workspace.TestWorkspace;
+import io.github.mengdlmole.testtools.workspace.WorkspaceLocator;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
+
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+@SpringBootApplication
+public class MockServerApplication {
+    public static void main(String[] args) {
+        Path workspacePath = WorkspaceLocator.locate(argument(args, "--workspace"));
+        MockWorkspace workspace = new MockWorkspace(new TestWorkspace(workspacePath));
+        int port = workspace.config().resolvedPort();
+
+        SpringApplication application = new SpringApplication(MockServerApplication.class);
+        Map<String, Object> defaults = new LinkedHashMap<>();
+        defaults.put("server.address", "127.0.0.1");
+        defaults.put("server.port", port);
+        defaults.put("spring.application.name", "local-mock-server");
+        defaults.put("test-tools.workspace", workspacePath.toString());
+        application.setDefaultProperties(defaults);
+        application.run(withoutWorkspaceArgument(args));
+    }
+
+    @Bean
+    TestWorkspace testWorkspace(@Value("${test-tools.workspace}") String path) {
+        return new TestWorkspace(Path.of(path));
+    }
+
+    @Bean MockWorkspace mockWorkspace(TestWorkspace workspace) { return new MockWorkspace(workspace); }
+
+    @Bean SecurityHandlerRegistry securityHandlerRegistry() { return SecurityHandlerLoader.create(); }
+    @Bean VariableResolver variableResolver(TestWorkspace workspace) { return new VariableResolver(workspace.jsonMapper()); }
+    @Bean HttpExecutor httpExecutor() { return new HttpExecutor(); }
+
+    @Bean
+    ThreadPoolTaskScheduler callbackTaskScheduler() {
+        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(4);
+        scheduler.setThreadNamePrefix("mock-callback-");
+        scheduler.setWaitForTasksToCompleteOnShutdown(true);
+        scheduler.setAwaitTerminationSeconds(5);
+        return scheduler;
+    }
+
+    private static String argument(String[] args, String name) {
+        for (int i = 0; i < args.length - 1; i++) {
+            if (name.equals(args[i])) return args[i + 1];
+        }
+        return null;
+    }
+
+    private static String[] withoutWorkspaceArgument(String[] args) {
+        List<String> filtered = new ArrayList<>();
+        for (int i = 0; i < args.length; i++) {
+            if ("--workspace".equals(args[i])) { i++; continue; }
+            filtered.add(args[i]);
+        }
+        return filtered.toArray(String[]::new);
+    }
+}
