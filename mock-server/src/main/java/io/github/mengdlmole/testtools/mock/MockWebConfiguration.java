@@ -6,16 +6,17 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration
 class MockWebConfiguration implements WebMvcConfigurer {
-    private final CallbackCompletionInterceptor callbackInterceptor;
+  private final CallbackCompletionInterceptor callbackInterceptor;
 
-    MockWebConfiguration(CallbackCompletionInterceptor callbackInterceptor) {
-        this.callbackInterceptor = callbackInterceptor;
-    }
+  MockWebConfiguration(CallbackCompletionInterceptor callbackInterceptor) {
+    this.callbackInterceptor = callbackInterceptor;
+  }
 
-    @Override
-    public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(callbackInterceptor)
-                .addPathPatterns("/**")
-                .excludePathPatterns("/__testtools/**");
-    }
+  @Override
+  public void addInterceptors(InterceptorRegistry registry) {
+    registry
+        .addInterceptor(callbackInterceptor)
+        .addPathPatterns("/**")
+        .excludePathPatterns("/__testtools/**");
+  }
 }

@@ -27,6 +27,8 @@ test-workspace                可通过文件共享的配置、JSON、用例和 
 
 各模块允许和禁止承载的职责见 [架构与命名约定](docs/architecture.md)。
 
+项目以 Google Java Style 为基线，并统一使用多行 Javadoc。提交前运行 `./mvnw spotless:apply` 自动格式化，再运行 `./mvnw verify` 完成测试、格式和编码规范检查；详细约定见 [编码规范与格式化](docs/code-style.md)。
+
 ## 5 分钟运行示例
 
 要求 Java 21。首次执行会下载 Maven 和项目依赖。
@@ -241,6 +243,7 @@ test-workspace/
 ## 文档索引
 
 - [架构、模块边界和命名约定](docs/architecture.md)
+- [编码规范与格式化](docs/code-style.md)
 - [JUnit API 用例指南](docs/junit-api-tests.md)
 - [签名与验签扩展](docs/security.md)
 - [Spring Boot Mock Server](docs/mock-server.md)
