@@ -1,0 +1,4 @@
+{
+  "message": "hello from global template ${clientName}",
+  "tenantId": "${tenantId}"
+}

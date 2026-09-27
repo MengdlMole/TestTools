@@ -25,6 +25,28 @@ class TestWorkspaceTest {
   }
 
   @Test
+  void listsNestedYamlFilesAsWorkspaceRelativePaths() throws Exception {
+    Files.createDirectories(root.resolve("mocks/examples"));
+    Files.createDirectories(root.resolve("mocks/cases/order"));
+    Files.writeString(root.resolve("mocks/examples/health.yaml"), "name: health\n");
+    Files.writeString(root.resolve("mocks/cases/order/create.yml"), "name: create order\n");
+    Files.writeString(root.resolve("mocks/README.md"), "documentation\n");
+
+    assertEquals(
+        java.util.List.of("mocks/cases/order/create.yml", "mocks/examples/health.yaml"),
+        new TestWorkspace(root).listYamlFiles("mocks"));
+  }
+
+  @Test
+  void recursiveYamlListingIgnoresSymbolicLinks(@TempDir Path outside) throws Exception {
+    Files.createDirectories(root.resolve("mocks"));
+    Files.writeString(outside.resolve("outside.yaml"), "name: outside\n");
+    Files.createSymbolicLink(root.resolve("mocks/outside.yaml"), outside.resolve("outside.yaml"));
+
+    assertEquals(java.util.List.of(), new TestWorkspace(root).listYamlFiles("mocks"));
+  }
+
+  @Test
   void rejectsUnknownYamlFieldsSoTyposDoNotSilentlyPass() throws Exception {
     Files.writeString(
         root.resolve("workspace.yaml"), "defaultEnvironment: local\nunknownField: typo\n");
@@ -33,38 +55,53 @@ class TestWorkspaceTest {
 
   @Test
   void resolvesGlobalAndCaseOwnedJsonFixturesAndRejectsTraversal() throws Exception {
-    Files.createDirectories(root.resolve("fixtures/global"));
-    Files.createDirectories(root.resolve("fixtures/cases/create-order"));
-    Files.writeString(root.resolve("fixtures/global/common.json"), "{\"scope\":\"global\"}");
+    Files.createDirectories(root.resolve("fixtures/api-tests/global"));
+    Files.createDirectories(root.resolve("fixtures/api-tests/cases/create-order"));
     Files.writeString(
-        root.resolve("fixtures/cases/create-order/request.json"), "{\"scope\":\"case\"}");
+        root.resolve("fixtures/api-tests/global/common.json"), "{\"scope\":\"global\"}");
+    Files.writeString(
+        root.resolve("fixtures/api-tests/cases/create-order/request.json"), "{\"scope\":\"case\"}");
     TestWorkspace workspace = new TestWorkspace(root);
 
     assertEquals(
         "global",
-        workspace.readJson(workspace.globalJsonFile("common.json")).path("scope").asText());
+        workspace.readJson(workspace.apiGlobalJsonFile("common.json")).path("scope").asText());
     assertEquals(
         "case",
         workspace
-            .readJson(workspace.caseJsonFile("create-order", "request.json"))
+            .readJson(workspace.apiCaseJsonFile("create-order", "request.json"))
             .path("scope")
             .asText());
-    assertThrows(IllegalArgumentException.class, () -> workspace.globalJsonFile("../secret.json"));
+    assertThrows(
+        IllegalArgumentException.class, () -> workspace.apiGlobalJsonFile("../secret.json"));
     assertThrows(
         IllegalArgumentException.class,
-        () -> workspace.caseJsonFile("create-order", "../other.json"));
+        () -> workspace.apiCaseJsonFile("create-order", "../other.json"));
   }
 
   @Test
   void rejectsJsonFixtureDirectorySymlinkedOutsideWorkspace(@TempDir Path outside)
       throws Exception {
     Files.writeString(outside.resolve("request.json"), "{}");
-    Files.createDirectories(root.resolve("fixtures"));
-    Files.createSymbolicLink(root.resolve("fixtures/global"), outside);
+    Files.createDirectories(root.resolve("fixtures/api-tests"));
+    Files.createSymbolicLink(root.resolve("fixtures/api-tests/global"), outside);
 
     assertThrows(
         IllegalArgumentException.class,
-        () -> new TestWorkspace(root).globalJsonFile("request.json"));
+        () -> new TestWorkspace(root).apiGlobalJsonFile("request.json"));
+  }
+
+  @Test
+  void rejectsBodyFileSymlinkedOutsideWorkspace(@TempDir Path outside) throws Exception {
+    Files.writeString(outside.resolve("secret.txt"), "outside workspace");
+    Files.createDirectories(root.resolve("fixtures"));
+    Files.createSymbolicLink(
+        root.resolve("fixtures/external-secret.txt"), outside.resolve("secret.txt"));
+
+    TestWorkspace workspace = new TestWorkspace(root);
+
+    assertThrows(
+        IllegalArgumentException.class, () -> workspace.fileBytes("fixtures/external-secret.txt"));
   }
 
   @Test

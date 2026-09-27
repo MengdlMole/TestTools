@@ -1,6 +1,6 @@
 package io.github.mengdlmole.testtools.mock;
 
-import io.github.mengdlmole.testtools.http.HttpExecutor;
+import io.github.mengdlmole.testtools.http.transport.HttpExecutor;
 import io.github.mengdlmole.testtools.mock.config.MockWorkspace;
 import io.github.mengdlmole.testtools.security.SecurityHandlerLoader;
 import io.github.mengdlmole.testtools.security.SecurityHandlerRegistry;

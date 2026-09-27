@@ -1,0 +1,14 @@
+name: JSON 请求体示例
+enabled: true
+priority: 20
+
+request:
+  method: POST
+  path: /examples/json
+
+response:
+  status: 200
+  headers:
+    Content-Type: application/json
+  body:
+    success: true

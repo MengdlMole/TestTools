@@ -6,7 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
- * Shared URL and query assembly for HTTP-based test runners.
+ * Shared URL and query assembly for the JUnit client and Mock callbacks.
  *
  * @since 0.2.0
  */

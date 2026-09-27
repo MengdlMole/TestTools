@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -111,14 +110,6 @@ public final class TestWorkspace {
     }
   }
 
-  public <T> T parseYaml(String yaml, Class<T> type) {
-    try {
-      return yamlMapper.readValue(yaml, type);
-    } catch (IOException error) {
-      throw new WorkspaceException("Invalid YAML", error);
-    }
-  }
-
   public List<String> listYamlNames(String directory) {
     Path path = resolve(directory);
     if (!Files.isDirectory(path)) {
@@ -138,34 +129,54 @@ public final class TestWorkspace {
     }
   }
 
-  public String readNamedYamlText(String directory, String name) {
-    try {
-      return Files.readString(resolveNamedYaml(directory, name));
-    } catch (IOException error) {
-      throw new WorkspaceException("Cannot read YAML: " + directory + "/" + name, error);
+  /**
+   * Lists YAML files recursively below a workspace directory.
+   *
+   * <p>The returned paths are relative to the workspace root and use forward slashes. Symbolic
+   * links are deliberately ignored so a shareable workspace cannot make a recursive loader read a
+   * file outside the workspace.
+   *
+   * @param directory workspace-relative directory to scan
+   * @return sorted workspace-relative paths of YAML files
+   * @throws WorkspaceException when the directory cannot be read
+   */
+  public List<String> listYamlFiles(String directory) {
+    Path path = resolve(directory);
+    if (!Files.isDirectory(path)) {
+      return List.of();
     }
-  }
-
-  public synchronized void writeNamedYamlText(String directory, String name, String yaml) {
-    writeAtomically(
-        resolve(directory).resolve(safeName(name) + ".yaml"),
-        yaml.getBytes(StandardCharsets.UTF_8));
+    try (var files = Files.walk(path)) {
+      return files
+          .filter(Files::isRegularFile)
+          .filter(file -> !Files.isSymbolicLink(file))
+          .filter(TestWorkspace::isYamlFile)
+          .map(root::relativize)
+          .map(file -> file.toString().replace('\\', '/'))
+          .sorted()
+          .toList();
+    } catch (IOException error) {
+      throw new WorkspaceException("Cannot list YAML directory recursively: " + directory, error);
+    }
   }
 
   public byte[] fileBytes(String relativePath) {
     try {
-      return Files.readAllBytes(resolve(relativePath));
+      Path realRoot = root.toRealPath();
+      Path realPath = resolve(relativePath).toRealPath();
+      ensureInside(realRoot, realPath, "Workspace file symbolic link must remain inside workspace");
+      return Files.readAllBytes(realPath);
     } catch (IOException error) {
       throw new WorkspaceException("Cannot read workspace file: " + relativePath, error);
     }
   }
 
-  public Path globalJsonFile(String relativeFile) {
-    return jsonFixture(resolve("fixtures/global"), relativeFile);
+  public Path apiGlobalJsonFile(String relativeFile) {
+    return jsonFixture(resolve("fixtures/api-tests/global"), relativeFile);
   }
 
-  public Path caseJsonFile(String caseName, String relativeFile) {
-    return jsonFixture(resolve("fixtures/cases").resolve(safeName(caseName)), relativeFile);
+  public Path apiCaseJsonFile(String caseName, String relativeFile) {
+    return jsonFixture(
+        resolve("fixtures/api-tests/cases").resolve(safeName(caseName)), relativeFile);
   }
 
   public JsonNode readJson(Path path) {
@@ -197,34 +208,6 @@ public final class TestWorkspace {
     }
   }
 
-  public List<String> resultFiles(int limit) {
-    Path resultRoot = resolve("results");
-    if (!Files.isDirectory(resultRoot)) {
-      return List.of();
-    }
-    try (var files = Files.walk(resultRoot)) {
-      return files
-          .filter(Files::isRegularFile)
-          .map(resultRoot::relativize)
-          .map(Path::toString)
-          .sorted(java.util.Comparator.reverseOrder())
-          .limit(Math.max(1, Math.min(limit, 500)))
-          .toList();
-    } catch (IOException error) {
-      throw new WorkspaceException("Cannot list results", error);
-    }
-  }
-
-  public JsonNode result(String relativePath) {
-    try {
-      Path target = resolve("results").resolve(relativePath).normalize();
-      ensureInside(resolve("results"), target, "Invalid result path");
-      return jsonMapper.readTree(target.toFile());
-    } catch (IOException error) {
-      throw new WorkspaceException("Cannot read result: " + relativePath, error);
-    }
-  }
-
   private Path resolve(String relativePath) {
     Path path = root.resolve(relativePath).normalize();
     ensureInside(root, path, "Workspace path must remain inside workspace");
@@ -247,6 +230,11 @@ public final class TestWorkspace {
       throw new IllegalArgumentException("Invalid file name");
     }
     return name;
+  }
+
+  private static boolean isYamlFile(Path path) {
+    String name = path.getFileName().toString().toLowerCase();
+    return name.endsWith(".yaml") || name.endsWith(".yml");
   }
 
   private Path jsonFixture(Path fixtureRoot, String relativeFile) {

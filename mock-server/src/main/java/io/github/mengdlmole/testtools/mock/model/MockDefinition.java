@@ -8,7 +8,6 @@ import java.util.Map;
  * Complete declarative definition of one local HTTP stub.
  *
  * @param name unique mock definition name
- * @param protocol request protocol; currently {@code http}
  * @param enabled whether the definition participates in matching
  * @param priority lower values are matched first
  * @param request request-matching rules
@@ -18,7 +17,6 @@ import java.util.Map;
  */
 public record MockDefinition(
     String name,
-    String protocol,
     Boolean enabled,
     Integer priority,
     Request request,
@@ -37,7 +35,6 @@ public record MockDefinition(
 
   public record AfterResponse(
       String name,
-      String protocol,
       Long delayMs,
       Long timeoutMs,
       String securityHandler,

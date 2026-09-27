@@ -11,11 +11,11 @@ java -jar mock-server/target/mock-server.jar --workspace test-workspace
 
 ## 新增 Mock
 
-在 `test-workspace/mocks/<名称>.yaml` 新建：
+真实业务测试桩放在 `test-workspace/mocks/cases/<业务域>/`，例如
+`test-workspace/mocks/cases/order/create-order.yaml`：
 
 ```yaml
 name: 创建订单
-protocol: http
 enabled: true
 priority: 10
 securityHandler: none
@@ -42,6 +42,23 @@ response:
 
 匹配规则：已配置的 method、path、query、Header 和 JSON body 必须匹配；未配置的字段不参与。多个定义匹配时 `priority` 数值较小者优先，默认 100。
 
+Mock Server 递归加载 `mocks/` 下所有 `.yaml` 和 `.yml` 文件，因此可以按业务域继续分目录：
+
+```text
+test-workspace/mocks/
+├── examples/                       工具自带的可运行示例
+└── cases/                           项目真实测试桩
+    ├── order/
+    │   ├── create-order.yaml
+    │   └── query-order.yaml
+    └── payment/
+        └── pay-order.yaml
+```
+
+一个文件描述一个接口行为，文件使用 `kebab-case` 命名。不要建立含义模糊的
+`mocks/common/`：共享响应文件放在 `test-workspace/fixtures/mock/`，共享验签代码放在
+`project-security`。Java 框架源码与接口定义不混放。
+
 内联 `body` 默认添加 `Content-Type: application/json`。使用文件时需要显式指定媒体类型：
 
 ```yaml
@@ -49,7 +66,7 @@ response:
   status: 200
   headers:
     Content-Type: application/json
-  bodyFile: fixtures/mock/order-response.json
+  bodyFile: fixtures/mock/order/order-response.json
 ```
 
 `body` 与 `bodyFile` 不能同时配置。Mock Server 每次重新读取文件时都会校验 HTTP Mock 的名称、request、path、response，以及 callback 的 request、URL 和 body 来源；配置错误会返回明确的执行错误，不会静默选择其中一个字段。
@@ -67,7 +84,6 @@ securityHandler: orderApiV1
 ```yaml
 afterResponse:
   - name: order-created-callback
-    protocol: http
     delayMs: 500
     timeoutMs: 3000
     securityHandler: none

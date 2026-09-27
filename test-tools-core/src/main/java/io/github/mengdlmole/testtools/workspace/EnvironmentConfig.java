@@ -8,12 +8,7 @@ import java.util.Map;
  * @param name environment name
  * @param baseUrl base URL used for relative API paths
  * @param secretRef key of the corresponding entry in the local secrets file
- * @param defaultSecurityHandler default security handler identifier
  * @param variables environment-level variables
  */
 public record EnvironmentConfig(
-    String name,
-    String baseUrl,
-    String secretRef,
-    String defaultSecurityHandler,
-    Map<String, String> variables) {}
+    String name, String baseUrl, String secretRef, Map<String, String> variables) {}

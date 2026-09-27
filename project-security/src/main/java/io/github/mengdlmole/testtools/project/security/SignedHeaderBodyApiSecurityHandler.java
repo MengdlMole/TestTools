@@ -2,8 +2,8 @@ package io.github.mengdlmole.testtools.project.security;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.mengdlmole.testtools.http.MutableRequest;
-import io.github.mengdlmole.testtools.http.RequestSnapshot;
+import io.github.mengdlmole.testtools.http.transport.MutableRequest;
+import io.github.mengdlmole.testtools.http.transport.RequestSnapshot;
 import io.github.mengdlmole.testtools.security.HttpSecurityHandler;
 import io.github.mengdlmole.testtools.security.SignContext;
 import io.github.mengdlmole.testtools.security.VerificationResult;

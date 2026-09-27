@@ -1,9 +1,9 @@
 package io.github.mengdlmole.testtools.project.security;
 
-import io.github.mengdlmole.testtools.http.MutableRequest;
-import io.github.mengdlmole.testtools.http.MutableResponse;
-import io.github.mengdlmole.testtools.http.RequestSnapshot;
-import io.github.mengdlmole.testtools.http.ResponseSnapshot;
+import io.github.mengdlmole.testtools.http.transport.MutableRequest;
+import io.github.mengdlmole.testtools.http.transport.MutableResponse;
+import io.github.mengdlmole.testtools.http.transport.RequestSnapshot;
+import io.github.mengdlmole.testtools.http.transport.ResponseSnapshot;
 import io.github.mengdlmole.testtools.security.HttpSecurityHandler;
 import io.github.mengdlmole.testtools.security.SignContext;
 import io.github.mengdlmole.testtools.security.VerificationResult;

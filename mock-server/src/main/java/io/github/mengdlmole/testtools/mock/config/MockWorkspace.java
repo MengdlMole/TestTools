@@ -28,8 +28,8 @@ public final class MockWorkspace {
   }
 
   public List<MockDefinition> definitions() {
-    return files.listYamlNames("mocks").stream()
-        .map(name -> validate(name, files.readNamedYaml("mocks", name, MockDefinition.class)))
+    return files.listYamlFiles("mocks").stream()
+        .map(path -> validate(path, files.readYaml(path, MockDefinition.class)))
         .sorted(Comparator.comparing(mock -> mock.priority() == null ? 100 : mock.priority()))
         .toList();
   }
@@ -42,19 +42,17 @@ public final class MockWorkspace {
     if (definition.request() == null) {
       throw new IllegalArgumentException(source + " request is required");
     }
-    if (isHttp(definition)) {
-      if (!hasText(definition.request().path())) {
-        throw new IllegalArgumentException(source + " HTTP request path is required");
-      }
-      if (definition.response() == null) {
-        throw new IllegalArgumentException(source + " response is required");
-      }
-      rejectBodyConflict(
-          source + " response", definition.response().body(), definition.response().bodyFile());
-      if (definition.afterResponse() != null) {
-        for (int index = 0; index < definition.afterResponse().size(); index++) {
-          validateCallback(source, definition.afterResponse().get(index), index + 1);
-        }
+    if (!hasText(definition.request().path())) {
+      throw new IllegalArgumentException(source + " HTTP request path is required");
+    }
+    if (definition.response() == null) {
+      throw new IllegalArgumentException(source + " response is required");
+    }
+    rejectBodyConflict(
+        source + " response", definition.response().body(), definition.response().bodyFile());
+    if (definition.afterResponse() != null) {
+      for (int index = 0; index < definition.afterResponse().size(); index++) {
+        validateCallback(source, definition.afterResponse().get(index), index + 1);
       }
     }
     return definition;
@@ -82,12 +80,6 @@ public final class MockWorkspace {
     if (body != null && hasText(bodyFile)) {
       throw new IllegalArgumentException(source + " may use body or bodyFile, not both");
     }
-  }
-
-  private boolean isHttp(MockDefinition definition) {
-    return definition.protocol() == null
-        || definition.protocol().isBlank()
-        || "http".equalsIgnoreCase(definition.protocol());
   }
 
   private boolean hasText(String value) {

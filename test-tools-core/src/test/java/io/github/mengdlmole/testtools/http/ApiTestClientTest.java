@@ -4,6 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.mengdlmole.testtools.http.transport.HttpExecutor;
+import io.github.mengdlmole.testtools.http.transport.MutableRequest;
+import io.github.mengdlmole.testtools.http.transport.RequestSnapshot;
+import io.github.mengdlmole.testtools.http.transport.ResponseSnapshot;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,28 +24,27 @@ class ApiTestClientTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  void buildsAndSignsFinalRequestAndMasksSignatureInLogs() {
+  void sendsAnExplicitlyAssembledRequestAndMasksSecretsInLogs() {
     StubExecutor executor = new StubExecutor();
     List<String> logs = new ArrayList<>();
-    Map<String, Object> body = new LinkedHashMap<>();
-    body.put("message", "hello");
-
-    ApiTestClient.ApiResponse response =
+    ApiTestClient client =
         ApiTestClient.builder("http://localhost:8080/")
             .defaultHeader("x-test-header", "default")
             .executor(executor)
             .logger(logs::add)
-            .build()
-            .post("/orders")
-            .header("X-Test-Header", "request")
-            .query("name", "hello world")
-            .query("name", "again")
-            .query("apiToken", "query-secret")
-            .jsonBody(body)
-            .signWith(
-                request ->
-                    request.header("X-Signature", request.uri().getRawQuery() + request.bodyText()))
-            .execute();
+            .build();
+
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("message", "hello");
+    ApiRequest request = client.post("/orders");
+    request.header("X-Test-Header", "request");
+    request.query("name", "hello world");
+    request.query("name", "again");
+    request.query("apiToken", "query-secret");
+    request.jsonBody(body);
+    request.header("X-Signature", request.uri().getRawQuery() + request.bodyText());
+
+    ApiResponse response = client.send(request);
 
     assertEquals(
         "name=hello+world&name=again&apiToken=query-secret", executor.request.uri().getRawQuery());
@@ -55,39 +59,27 @@ class ApiTestClientTest {
   }
 
   @Test
-  void executeVerifiedFailsTheTestWhenResponseVerificationFails() {
-    ApiTestClient.Request request =
-        ApiTestClient.builder("http://localhost")
-            .executor(new StubExecutor())
-            .logger(message -> {})
-            .build()
-            .get("/health")
-            .verifyWith(
-                (sent, response) ->
-                    io.github.mengdlmole.testtools.security.VerificationResult.failed(
-                        "bad signature"));
-
-    ApiTestClient.ResponseVerificationException error =
-        assertThrows(ApiTestClient.ResponseVerificationException.class, request::executeVerified);
-    assertEquals("bad signature", error.getMessage());
-  }
-
-  @Test
   void usesJsonFileBytesDirectlyAndAddsContentType() throws Exception {
     Path json = temporaryDirectory.resolve("request.json");
     Files.writeString(json, "{\n  \"message\": \"preserve whitespace\"\n}\n");
     StubExecutor executor = new StubExecutor();
+    ApiTestClient client =
+        ApiTestClient.builder("http://localhost").executor(executor).logger(message -> {}).build();
 
-    ApiTestClient.builder("http://localhost")
-        .executor(executor)
-        .logger(message -> {})
-        .build()
-        .post("/echo")
-        .jsonBodyFile(json)
-        .execute();
+    ApiRequest request = client.post("/echo");
+    request.jsonBodyFile(json);
+    client.send(request);
 
     assertEquals("{\n  \"message\": \"preserve whitespace\"\n}\n", executor.request.bodyText());
     assertEquals("application/json", executor.request.headers().get("Content-Type"));
+  }
+
+  @Test
+  void rejectsEmptyResponseWhenJsonIsRequested() {
+    ApiResponse response =
+        new ApiResponse(new ResponseSnapshot(204, Map.of(), new byte[0], 1), new ObjectMapper());
+
+    assertThrows(IllegalArgumentException.class, response::json);
   }
 
   private static final class StubExecutor extends HttpExecutor {

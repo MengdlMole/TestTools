@@ -20,9 +20,9 @@
 
 调用 `GET /__testtools/callbacks`，检查状态、尝试次数和错误；完成记录位于 `results/callbacks/`。
 
-## YAML 加载失败
+## Mock YAML 加载失败
 
-YAML 使用严格字段检查和基础结构校验，拼错字段、空 suite、缺少 step path 或同时配置多个 body 来源都会直接失败。检查缩进、字段名称、环境、密钥引用、签名处理器 ID 和 fixture 路径。
+Mock YAML 使用严格字段检查和基础结构校验，拼错字段、缺少 request path 或同时配置多个 body 来源都会直接失败。检查缩进、字段名称、环境、密钥引用、签名处理器 ID 和 fixture 路径。
 
 ## 日志与敏感数据
 
@@ -34,4 +34,4 @@ YAML 使用严格字段检查和基础结构校验，拼错字段、空 suite、
 - gRPC/Dubbo 尚未实现；后续应增加独立协议适配模块。
 - Mock 不包含录制回放、代理、复杂故障注入和压测；需要时评估 WireMock 或 MockServer。
 - Java DSL 的同名 Header 当前只保存一个值，query 支持同名多值。
-- JUnit 使用 IDE/Maven 日志与报告；YAML runner 额外持久化结构化结果。
+- JUnit 使用 IDE/Maven 日志与报告；Mock callback 的执行结果持久化到工作区。

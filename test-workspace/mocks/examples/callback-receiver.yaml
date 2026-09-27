@@ -1,0 +1,10 @@
+name: HTTP 回调接收端
+enabled: true
+priority: 5
+
+request:
+  method: POST
+  path: /callback/received
+
+response:
+  status: 204

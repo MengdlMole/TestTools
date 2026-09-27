@@ -1,24 +1,23 @@
 package io.github.mengdlmole.testtools.http;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jayway.jsonpath.JsonPath;
-import io.github.mengdlmole.testtools.security.HttpSecurityHandler;
-import io.github.mengdlmole.testtools.security.SignContext;
-import io.github.mengdlmole.testtools.security.VerificationResult;
+import io.github.mengdlmole.testtools.http.transport.HttpExecutor;
+import io.github.mengdlmole.testtools.http.transport.MutableRequest;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Consumer;
 
 /**
- * Lightweight code-first HTTP test DSL. It has no dependency on JUnit or TestNG.
+ * Creates explicit API requests and sends them through the shared HTTP executor.
+ *
+ * <p>The client deliberately does not own signing or assertions. Tests assemble headers, body,
+ * signature data, and signatures before calling {@link #send(ApiRequest)}.
+ *
+ * @since 0.2.0
  */
 public final class ApiTestClient {
   private final String baseUrl;
@@ -30,286 +29,125 @@ public final class ApiTestClient {
   private final int bodyLogLimit;
 
   private ApiTestClient(Builder builder) {
-    this.baseUrl = builder.baseUrl.trim();
-    this.defaultHeaders = Map.copyOf(builder.defaultHeaders);
-    this.defaultTimeout = builder.timeout;
-    this.mapper = builder.mapper;
-    this.executor = builder.executor;
-    this.logger = builder.logger;
-    this.bodyLogLimit = builder.bodyLogLimit;
+    baseUrl = builder.baseUrl.trim();
+    defaultHeaders = Map.copyOf(builder.defaultHeaders);
+    defaultTimeout = builder.timeout;
+    mapper = builder.mapper;
+    executor = builder.executor;
+    logger = builder.logger;
+    bodyLogLimit = builder.bodyLogLimit;
   }
 
+  /**
+   * Starts configuring a client for one target base URL.
+   *
+   * @param baseUrl absolute HTTP or HTTPS base URL
+   * @return client builder
+   */
   public static Builder builder(String baseUrl) {
     return new Builder(baseUrl);
   }
 
-  public Request request(String method, String pathOrUrl) {
-    return new Request(method, pathOrUrl);
+  /**
+   * Creates an unexecuted request using an arbitrary HTTP method.
+   *
+   * @param method HTTP method
+   * @param pathOrUrl relative path or absolute URL
+   * @return mutable request owned by the calling test
+   */
+  public ApiRequest request(String method, String pathOrUrl) {
+    return new ApiRequest(baseUrl, method, pathOrUrl, defaultHeaders, defaultTimeout, mapper);
   }
 
-  public Request get(String pathOrUrl) {
+  /**
+   * Creates an unexecuted GET request.
+   *
+   * @param pathOrUrl relative path or absolute URL
+   * @return mutable request
+   */
+  public ApiRequest get(String pathOrUrl) {
     return request("GET", pathOrUrl);
   }
 
-  public Request post(String pathOrUrl) {
+  /**
+   * Creates an unexecuted POST request.
+   *
+   * @param pathOrUrl relative path or absolute URL
+   * @return mutable request
+   */
+  public ApiRequest post(String pathOrUrl) {
     return request("POST", pathOrUrl);
   }
 
-  public Request put(String pathOrUrl) {
+  /**
+   * Creates an unexecuted PUT request.
+   *
+   * @param pathOrUrl relative path or absolute URL
+   * @return mutable request
+   */
+  public ApiRequest put(String pathOrUrl) {
     return request("PUT", pathOrUrl);
   }
 
-  public Request patch(String pathOrUrl) {
+  /**
+   * Creates an unexecuted PATCH request.
+   *
+   * @param pathOrUrl relative path or absolute URL
+   * @return mutable request
+   */
+  public ApiRequest patch(String pathOrUrl) {
     return request("PATCH", pathOrUrl);
   }
 
-  public Request delete(String pathOrUrl) {
+  /**
+   * Creates an unexecuted DELETE request.
+   *
+   * @param pathOrUrl relative path or absolute URL
+   * @return mutable request
+   */
+  public ApiRequest delete(String pathOrUrl) {
     return request("DELETE", pathOrUrl);
   }
 
-  public final class Request {
-    private final String method;
-    private final String pathOrUrl;
-    private final List<HttpRequestUriBuilder.QueryParameter> query = new ArrayList<>();
-    private final Map<String, String> headers = new LinkedHashMap<>(defaultHeaders);
-    private final List<RequestSigner> signers = new ArrayList<>();
-    private byte[] body = new byte[0];
-    private Duration timeout = defaultTimeout;
-    private ResponseVerifier responseVerifier = (request, response) -> VerificationResult.ok();
+  /**
+   * Sends a fully assembled request and logs its request/response exchange.
+   *
+   * @param request request whose headers, body, and signature are already final
+   * @return captured response and sent request snapshot
+   */
+  public ApiResponse send(ApiRequest request) {
+    Objects.requireNonNull(request, "request must not be null");
+    MutableRequest httpRequest = request.toMutableRequest();
 
-    private Request(String method, String pathOrUrl) {
-      if (method == null || method.isBlank()) {
-        throw new IllegalArgumentException("HTTP method is required");
-      }
-      if (pathOrUrl == null || pathOrUrl.isBlank()) {
-        throw new IllegalArgumentException("Path or URL is required");
-      }
-      this.method = method.toUpperCase();
-      this.pathOrUrl = pathOrUrl;
+    log("--> " + httpRequest.method() + " " + SensitiveDataMasker.maskUri(httpRequest.uri()));
+    if (!httpRequest.headers().isEmpty()) {
+      log("    request headers: " + SensitiveDataMasker.maskHeaders(httpRequest.headers()));
+    }
+    if (httpRequest.body().length > 0) {
+      log("    request body   : " + bodyForLog(httpRequest.bodyText()));
     }
 
-    public Request query(String name, Object value) {
-      if (name == null || name.isBlank()) {
-        throw new IllegalArgumentException("Query name is required");
-      }
-      query.add(
-          new HttpRequestUriBuilder.QueryParameter(
-              name, value == null ? "" : String.valueOf(value)));
-      return this;
-    }
-
-    public Request queries(Map<String, ?> values) {
-      if (values != null) {
-        values.forEach(this::query);
-      }
-      return this;
-    }
-
-    public Request header(String name, Object value) {
-      if (name == null || name.isBlank()) {
-        throw new IllegalArgumentException("Header name is required");
-      }
-      HttpHeaderSupport.putReplacingIgnoreCase(
-          headers, name, value == null ? "" : String.valueOf(value));
-      return this;
-    }
-
-    public Request headers(Map<String, ?> values) {
-      if (values != null) {
-        values.forEach(this::header);
-      }
-      return this;
-    }
-
-    public Request body(String value) {
-      body = value == null ? new byte[0] : value.getBytes(StandardCharsets.UTF_8);
-      return this;
-    }
-
-    public Request body(byte[] value) {
-      body = value == null ? new byte[0] : value.clone();
-      return this;
-    }
-
-    public Request bodyFile(Path file) {
-      try {
-        return body(Files.readAllBytes(file));
-      } catch (Exception error) {
-        throw new IllegalArgumentException("Cannot read request body: " + file, error);
-      }
-    }
-
-    public Request jsonBody(Object value) {
-      try {
-        body = value == null ? new byte[0] : mapper.writeValueAsBytes(value);
-        if (body.length > 0) {
-          HttpHeaderSupport.putIfAbsentIgnoreCase(headers, "Content-Type", "application/json");
-        }
-        return this;
-      } catch (Exception error) {
-        throw new IllegalArgumentException("Cannot serialize JSON request body", error);
-      }
-    }
-
-    /**
-     * Uses the JSON file bytes as the exact request body and adds application/json. Keeping the
-     * original bytes is useful when the body text participates in signing.
-     *
-     * @param file JSON fixture to read
-     * @return this request builder
-     * @throws IllegalArgumentException if the file cannot be read or does not contain JSON
-     */
-    public Request jsonBodyFile(Path file) {
-      try {
-        byte[] content = Files.readAllBytes(file);
-        JsonNode parsed = mapper.readTree(content);
-        if (parsed == null) {
-          throw new IllegalArgumentException("JSON request body must not be empty: " + file);
-        }
-        body = content;
-        HttpHeaderSupport.putIfAbsentIgnoreCase(headers, "Content-Type", "application/json");
-        return this;
-      } catch (IllegalArgumentException error) {
-        throw error;
-      } catch (Exception error) {
-        throw new IllegalArgumentException("Cannot read JSON request body: " + file, error);
-      }
-    }
-
-    /**
-     * Adds arbitrary request mutation/signing logic, executed after URI and body are final.
-     *
-     * @param signer request mutation or signing callback
-     * @return this request builder
-     */
-    public Request signWith(RequestSigner signer) {
-      signers.add(java.util.Objects.requireNonNull(signer));
-      return this;
-    }
-
-    /**
-     * Uses a reusable handler for both request signing and response verification.
-     *
-     * @param handler reusable signing and verification strategy
-     * @param context variables and secrets supplied to the handler
-     * @return this request builder
-     */
-    public Request security(HttpSecurityHandler handler, SignContext context) {
-      signWith(request -> handler.signRequest(context, request));
-      return verifyWith((request, response) -> handler.verifyResponse(context, request, response));
-    }
-
-    public Request verifyWith(ResponseVerifier verifier) {
-      responseVerifier = java.util.Objects.requireNonNull(verifier);
-      return this;
-    }
-
-    public Request timeout(Duration value) {
-      timeout = java.util.Objects.requireNonNull(value);
-      if (timeout.isZero() || timeout.isNegative()) {
-        throw new IllegalArgumentException("Timeout must be positive");
-      }
-      return this;
-    }
-
-    public ApiResponse execute() {
-      MutableRequest request =
-          new MutableRequest(
-              method, HttpRequestUriBuilder.build(baseUrl, pathOrUrl, query), headers, body);
-      signers.forEach(signer -> signer.sign(request));
-
-      log("--> " + request.method() + " " + SensitiveDataMasker.maskUri(request.uri()));
-      if (!request.headers().isEmpty()) {
-        log("    request headers: " + SensitiveDataMasker.maskHeaders(request.headers()));
-      }
-      if (request.body().length > 0) {
-        log("    request body   : " + bodyForLog(request.bodyText()));
-      }
-      HttpExecutor.Exchange exchange = executor.execute(request, timeout);
+    HttpExecutor.Exchange exchange = executor.execute(httpRequest, request.timeout());
+    log(
+        "<-- HTTP "
+            + exchange.response().status()
+            + " ("
+            + exchange.response().durationMs()
+            + " ms)");
+    if (!exchange.response().headers().isEmpty()) {
       log(
-          "<-- HTTP "
-              + exchange.response().status()
-              + " ("
-              + exchange.response().durationMs()
-              + " ms)");
-      if (!exchange.response().headers().isEmpty()) {
-        log(
-            "    response headers: "
-                + SensitiveDataMasker.maskHeaders(flatten(exchange.response().headers())));
-      }
-      if (exchange.response().body().length > 0) {
-        log("    response body   : " + bodyForLog(exchange.response().bodyText()));
-      }
-      VerificationResult verification =
-          responseVerifier.verify(exchange.request(), exchange.response());
-      log(
-          "    verification    : "
-              + (verification.success() ? "PASSED" : "FAILED")
-              + " ("
-              + verification.message()
-              + ")");
-      return new ApiResponse(exchange.request(), exchange.response(), verification, mapper);
+          "    response headers: "
+              + SensitiveDataMasker.maskHeaders(flatten(exchange.response().headers())));
     }
-
-    public ApiResponse executeVerified() {
-      ApiResponse response = execute();
-      if (!response.verification().success()) {
-        throw new ResponseVerificationException(response.verification().message());
-      }
-      return response;
+    if (exchange.response().body().length > 0) {
+      log("    response body   : " + bodyForLog(exchange.response().bodyText()));
     }
+    return new ApiResponse(exchange.response(), mapper);
   }
 
-  @FunctionalInterface
-  public interface RequestSigner {
-    void sign(MutableRequest request);
-  }
-
-  @FunctionalInterface
-  public interface ResponseVerifier {
-    VerificationResult verify(RequestSnapshot request, ResponseSnapshot response);
-  }
-
-  public static final class ResponseVerificationException extends AssertionError {
-    public ResponseVerificationException(String message) {
-      super(message == null || message.isBlank() ? "Response verification failed" : message);
-    }
-  }
-
-  public record ApiResponse(
-      RequestSnapshot request,
-      ResponseSnapshot response,
-      VerificationResult verification,
-      ObjectMapper mapper) {
-    public int status() {
-      return response.status();
-    }
-
-    public long durationMs() {
-      return response.durationMs();
-    }
-
-    public String body() {
-      return response.bodyText();
-    }
-
-    public String header(String name) {
-      return response.firstHeader(name);
-    }
-
-    public JsonNode json() {
-      try {
-        return mapper.readTree(response.body());
-      } catch (Exception error) {
-        throw new IllegalArgumentException("Response is not valid JSON", error);
-      }
-    }
-
-    public Object jsonPath(String path) {
-      return JsonPath.read(body(), path);
-    }
-  }
-
+  /**
+   * Builds an {@link ApiTestClient}; most tests obtain one through {@code ApiTestSupport}.
+   */
   public static final class Builder {
     private final String baseUrl;
     private final Map<String, String> defaultHeaders = new LinkedHashMap<>();
@@ -332,6 +170,14 @@ public final class ApiTestClient {
       this.baseUrl = baseUrl;
     }
 
+    /**
+     * Adds a Header copied into every request created by this client.
+     *
+     * @param name Header name
+     * @param value Header value
+     * @return this builder
+     * @throws IllegalArgumentException if the Header name is blank
+     */
     public Builder defaultHeader(String name, String value) {
       if (name == null || name.isBlank()) {
         throw new IllegalArgumentException("Header name is required");
@@ -340,29 +186,45 @@ public final class ApiTestClient {
       return this;
     }
 
+    /**
+     * Sets the default timeout used by requests.
+     *
+     * @param value positive timeout
+     * @return this builder
+     */
     public Builder timeout(Duration value) {
-      timeout = java.util.Objects.requireNonNull(value);
-      if (timeout.isZero() || timeout.isNegative()) {
-        throw new IllegalArgumentException("Timeout must be positive");
-      }
+      timeout = positiveTimeout(value);
       return this;
     }
 
+    /**
+     * Sets the Jackson mapper used for request and response JSON.
+     *
+     * @param value object mapper
+     * @return this builder
+     */
     public Builder objectMapper(ObjectMapper value) {
-      mapper = java.util.Objects.requireNonNull(value);
+      mapper = Objects.requireNonNull(value);
       return this;
     }
 
-    public Builder executor(HttpExecutor value) {
-      executor = java.util.Objects.requireNonNull(value);
+    Builder executor(HttpExecutor value) {
+      executor = Objects.requireNonNull(value);
       return this;
     }
 
-    public Builder logger(Consumer<String> value) {
-      logger = java.util.Objects.requireNonNull(value);
+    Builder logger(Consumer<String> value) {
+      logger = Objects.requireNonNull(value);
       return this;
     }
 
+    /**
+     * Sets the maximum number of response or request body characters written to logs.
+     *
+     * @param value maximum characters, or {@code -1} for no limit
+     * @return this builder
+     * @throws IllegalArgumentException if the value is less than {@code -1}
+     */
     public Builder bodyLogLimit(int value) {
       if (value < -1) {
         throw new IllegalArgumentException("Body log limit must be -1 or greater");
@@ -371,9 +233,22 @@ public final class ApiTestClient {
       return this;
     }
 
+    /**
+     * Creates an immutable client configuration.
+     *
+     * @return configured client
+     */
     public ApiTestClient build() {
       return new ApiTestClient(this);
     }
+  }
+
+  static Duration positiveTimeout(Duration value) {
+    Duration timeout = Objects.requireNonNull(value);
+    if (timeout.isZero() || timeout.isNegative()) {
+      throw new IllegalArgumentException("Timeout must be positive");
+    }
+    return timeout;
   }
 
   private String bodyForLog(String value) {

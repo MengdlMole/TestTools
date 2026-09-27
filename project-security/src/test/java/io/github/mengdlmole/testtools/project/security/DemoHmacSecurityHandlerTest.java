@@ -4,10 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.mengdlmole.testtools.http.MutableRequest;
-import io.github.mengdlmole.testtools.http.MutableResponse;
-import io.github.mengdlmole.testtools.http.RequestSnapshot;
-import io.github.mengdlmole.testtools.http.ResponseSnapshot;
+import io.github.mengdlmole.testtools.http.transport.MutableRequest;
+import io.github.mengdlmole.testtools.http.transport.MutableResponse;
+import io.github.mengdlmole.testtools.http.transport.RequestSnapshot;
+import io.github.mengdlmole.testtools.http.transport.ResponseSnapshot;
 import io.github.mengdlmole.testtools.security.SignContext;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
