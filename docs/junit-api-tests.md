@@ -50,6 +50,27 @@ assertEquals("CREATED", response.jsonPath("$.data.status"));
 
 `query` 支持同名多值；同名 Header 后设置的值覆盖先前值。
 
+## 请求日志与脱敏
+
+API 用例默认打印最终请求、响应和耗时，同时隐藏 URI 中的 `user:password`、敏感 query
+参数以及 Authorization、Cookie、token、secret、signature 等敏感 Header。全局开关位于
+`test-workspace/workspace.yaml`：
+
+```yaml
+defaultEnvironment: local
+maskSensitiveData: true
+```
+
+如果本地调试签名时必须观察原始值，可临时设置为 `false`。也可以对手工创建的客户端单独控制：
+
+```java
+ApiTestClient client = ApiTestClient.builder("http://localhost:8080")
+        .maskSensitiveData(false)
+        .build();
+```
+
+关闭后密钥、签名和认证信息会直接进入 IDE/Maven 日志，仅应在可信本机短期使用。
+
 ## JSON 文件
 
 API 用例数据统一位于：

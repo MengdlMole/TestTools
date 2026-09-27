@@ -52,9 +52,29 @@ class HttpCallbackDispatcherTest {
       assertTrue(
           http.quickAttempt.await(1, TimeUnit.SECONDS),
           "a retry interval must not occupy the only scheduler thread");
+      assertTrue(awaitCompleted(dispatcher, "quick"));
     } finally {
       scheduler.shutdown();
     }
+  }
+
+  private boolean awaitCompleted(HttpCallbackDispatcher dispatcher, String name)
+      throws InterruptedException {
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+    while (System.nanoTime() < deadline) {
+      boolean persisted =
+          dispatcher.recent().stream()
+              .filter(item -> name.equals(item.name()) && "SUCCESS".equals(item.status()))
+              .anyMatch(
+                  item ->
+                      java.nio.file.Files.isRegularFile(
+                          workspaceRoot.resolve("results").resolve(item.resultFile())));
+      if (persisted) {
+        return true;
+      }
+      Thread.sleep(10);
+    }
+    return false;
   }
 
   private CallbackTask task(String path, Retry retry) {
@@ -69,7 +89,7 @@ class HttpCallbackDispatcherTest {
     RequestSnapshot original =
         new RequestSnapshot("POST", URI.create("/original"), Map.of(), new byte[0]);
     return new CallbackTask(
-        "source-mock", definition, original, new SignContext(Map.of(), Map.of()));
+        "source-mock", definition, null, original, new SignContext(Map.of(), Map.of()));
   }
 
   private static final class CallbackExecutor extends HttpExecutor {

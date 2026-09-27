@@ -3,16 +3,18 @@ package io.github.mengdlmole.testtools.mock.engine;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
-import io.github.mengdlmole.testtools.mock.admin.MockCallStore;
+import io.github.mengdlmole.testtools.http.transport.RequestSnapshot;
+import io.github.mengdlmole.testtools.mock.config.MockDefinitionRepository;
 import io.github.mengdlmole.testtools.mock.config.MockWorkspace;
 import io.github.mengdlmole.testtools.security.SecurityHandlerLoader;
 import io.github.mengdlmole.testtools.workspace.TestWorkspace;
 import io.github.mengdlmole.testtools.workspace.VariableResolver;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.springframework.mock.web.MockHttpServletRequest;
 
 class HttpMockEngineTest {
   @TempDir Path temporary;
@@ -22,12 +24,12 @@ class HttpMockEngineTest {
     TestWorkspace workspace = new TestWorkspace(locateWorkspace());
     HttpMockEngine engine = engine(workspace);
 
-    var health = engine.execute(new MockHttpServletRequest("GET", "/health"), new byte[0]);
+    var health = engine.execute(request("GET", "/health"));
     assertEquals(200, health.response().status());
     assertEquals(
         "UP", workspace.jsonMapper().readTree(health.response().body()).path("status").asText());
 
-    var missing = engine.execute(new MockHttpServletRequest("GET", "/does-not-exist"), new byte[0]);
+    var missing = engine.execute(request("GET", "/does-not-exist"));
     assertEquals(404, missing.response().status());
     assertEquals(
         "No mock matched",
@@ -75,22 +77,28 @@ class HttpMockEngineTest {
     TestWorkspace workspace = new TestWorkspace(temporary);
     HttpMockEngine engine = engine(workspace);
 
-    var explicit = engine.execute(new MockHttpServletRequest("GET", "/explicit-text"), new byte[0]);
+    var explicit = engine.execute(request("GET", "/explicit-text"));
     assertEquals("text/plain", explicit.response().headers().get("content-type"));
     assertFalse(explicit.response().headers().containsKey("Content-Type"));
 
-    var bodyFile = engine.execute(new MockHttpServletRequest("GET", "/body-file"), new byte[0]);
+    var bodyFile = engine.execute(request("GET", "/body-file"));
     assertEquals("plain response", bodyFile.response().bodyText());
     assertFalse(
         bodyFile.response().headers().keySet().stream().anyMatch("Content-Type"::equalsIgnoreCase));
   }
 
   private HttpMockEngine engine(TestWorkspace workspace) {
+    MockWorkspace mocks = new MockWorkspace(workspace);
     return new HttpMockEngine(
-        new MockWorkspace(workspace),
+        new MockDefinitionRepository(mocks, 500),
         SecurityHandlerLoader.create(),
         new VariableResolver(workspace.jsonMapper()),
-        new MockCallStore());
+        workspace.jsonMapper());
+  }
+
+  private MockRequest request(String method, String path) {
+    return new MockRequest(
+        new RequestSnapshot(method, URI.create(path), Map.of(), new byte[0]), Map.of());
   }
 
   private static Path locateWorkspace() {

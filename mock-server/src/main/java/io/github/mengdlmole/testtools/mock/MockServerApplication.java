@@ -1,7 +1,11 @@
 package io.github.mengdlmole.testtools.mock;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.mengdlmole.testtools.http.transport.HttpExecutor;
+import io.github.mengdlmole.testtools.mock.config.MockDefinitionRepository;
+import io.github.mengdlmole.testtools.mock.config.MockServerConfig;
 import io.github.mengdlmole.testtools.mock.config.MockWorkspace;
+import io.github.mengdlmole.testtools.mock.engine.HttpMockEngine;
 import io.github.mengdlmole.testtools.security.SecurityHandlerLoader;
 import io.github.mengdlmole.testtools.security.SecurityHandlerRegistry;
 import io.github.mengdlmole.testtools.workspace.TestWorkspace;
@@ -23,14 +27,16 @@ public class MockServerApplication {
   public static void main(String[] args) {
     Path workspacePath = WorkspaceLocator.locate(argument(args, "--workspace"));
     MockWorkspace workspace = new MockWorkspace(new TestWorkspace(workspacePath));
-    int port = workspace.config().resolvedPort();
+    MockServerConfig config = workspace.config();
 
     SpringApplication application = new SpringApplication(MockServerApplication.class);
     Map<String, Object> defaults = new LinkedHashMap<>();
     defaults.put("server.address", "127.0.0.1");
-    defaults.put("server.port", port);
+    defaults.put("server.port", config.resolvedPort());
     defaults.put("spring.application.name", "local-mock-server");
     defaults.put("test-tools.workspace", workspacePath.toString());
+    defaults.put("test-tools.mock-reload-interval-ms", config.resolvedReloadIntervalMs());
+    defaults.put("test-tools.mask-sensitive-data", config.resolvedMaskSensitiveData());
     application.setDefaultProperties(defaults);
     application.run(withoutWorkspaceArgument(args));
   }
@@ -53,6 +59,15 @@ public class MockServerApplication {
   @Bean
   VariableResolver variableResolver(TestWorkspace workspace) {
     return new VariableResolver(workspace.jsonMapper());
+  }
+
+  @Bean
+  HttpMockEngine httpMockEngine(
+      MockDefinitionRepository definitions,
+      SecurityHandlerRegistry handlers,
+      VariableResolver variables,
+      ObjectMapper jsonMapper) {
+    return new HttpMockEngine(definitions, handlers, variables, jsonMapper);
   }
 
   @Bean

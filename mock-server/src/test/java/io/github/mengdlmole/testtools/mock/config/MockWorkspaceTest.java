@@ -102,4 +102,56 @@ class MockWorkspaceTest {
 
     assertThrows(IllegalArgumentException.class, mocks::definitions);
   }
+
+  @Test
+  void rejectsInvalidHttpAndExecutionSettingsDuringCatalogValidation() throws Exception {
+    Files.createDirectories(temporary.resolve("mocks"));
+    MockWorkspace mocks = new MockWorkspace(new TestWorkspace(temporary));
+    var invalidDefinitions =
+        java.util.List.of(
+            """
+            name: bad status
+            request: {method: GET, path: /test}
+            response: {status: 700}
+            """,
+            """
+            name: bad method
+            request: {method: "GET SPACE", path: /test}
+            response: {status: 200}
+            """,
+            """
+            name: bad callback URL
+            request: {path: /test}
+            response: {status: 200}
+            afterResponse:
+              - request: {url: "file:///tmp/result"}
+            """,
+            """
+            name: bad Header
+            request: {path: /test}
+            response:
+              status: 200
+              headers:
+                X-Test: "valid\\nInjected: true"
+            """,
+            """
+            name: bad delay
+            request: {path: /test}
+            response: {status: 200, delayMs: -1}
+            """,
+            """
+            name: bad callback limits
+            request: {path: /test}
+            response: {status: 200}
+            afterResponse:
+              - timeoutMs: 0
+                retry: {maxAttempts: 11, intervalMs: 0}
+                request: {url: "http://localhost/callback"}
+            """);
+
+    for (String definition : invalidDefinitions) {
+      Files.writeString(temporary.resolve("mocks/invalid.yaml"), definition);
+      assertThrows(IllegalArgumentException.class, mocks::definitions);
+    }
+  }
 }

@@ -105,6 +105,47 @@ class TestWorkspaceTest {
   }
 
   @Test
+  void writesNestedResultInsideWorkspace() throws Exception {
+    TestWorkspace workspace = new TestWorkspace(root);
+
+    Path result = workspace.writeResult("orders/create.json", Map.of("status", "ok"));
+
+    assertEquals(root.resolve("results/orders/create.json").toRealPath(), result.toRealPath());
+    assertEquals("ok", workspace.readJson(result).path("status").asText());
+  }
+
+  @Test
+  void rejectsResultsDirectorySymlinkedOutsideWorkspace(@TempDir Path outside) throws Exception {
+    Files.createSymbolicLink(root.resolve("results"), outside);
+
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new TestWorkspace(root).writeResult("result.json", Map.of("secret", "value")));
+  }
+
+  @Test
+  void rejectsResultParentSymlinkedOutsideWorkspace(@TempDir Path outside) throws Exception {
+    Files.createDirectories(root.resolve("results"));
+    Files.createSymbolicLink(root.resolve("results/orders"), outside);
+
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new TestWorkspace(root).writeResult("orders/result.json", Map.of()));
+  }
+
+  @Test
+  void rejectsExistingResultFileSymlink(@TempDir Path outside) throws Exception {
+    Files.createDirectories(root.resolve("results"));
+    Files.writeString(outside.resolve("captured.json"), "original");
+    Files.createSymbolicLink(root.resolve("results/result.json"), outside.resolve("captured.json"));
+
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new TestWorkspace(root).writeResult("result.json", Map.of("secret", "value")));
+    assertEquals("original", Files.readString(outside.resolve("captured.json")));
+  }
+
+  @Test
   void resolvesEnvironmentVariablesAndSecretsWithDocumentedPrecedence() throws Exception {
     Files.createDirectories(root.resolve("environments"));
     Files.createDirectories(root.resolve("secrets"));

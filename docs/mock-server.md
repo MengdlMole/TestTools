@@ -9,6 +9,16 @@ java -jar mock-server/target/mock-server.jar --workspace test-workspace
 
 只监听 `127.0.0.1`，端口来自 `test-workspace/mock-server.yaml`。
 
+```yaml
+port: 19090
+reloadIntervalMs: 500
+maskSensitiveData: true
+```
+
+`reloadIntervalMs` 是请求触发自动检查的最小间隔，不是后台轮询频率。没有请求时不会产生文件扫描。
+`maskSensitiveData` 控制 `/__testtools/calls` 中是否隐藏 URI 用户名/密码和敏感 query，默认
+开启。只有本地排查确实需要原文时才临时关闭。
+
 ## 新增 Mock
 
 真实业务测试桩放在 `test-workspace/mocks/cases/<业务域>/`，例如
@@ -69,7 +79,29 @@ response:
   bodyFile: fixtures/mock/order/order-response.json
 ```
 
-`body` 与 `bodyFile` 不能同时配置。Mock Server 每次重新读取文件时都会校验 HTTP Mock 的名称、request、path、response，以及 callback 的 request、URL 和 body 来源；配置错误会返回明确的执行错误，不会静默选择其中一个字段。
+`body` 与 `bodyFile` 不能同时配置。加载 catalog 时会完整校验 HTTP Mock 的名称、request、
+path、response、重复名称、HTTP method、状态码、Header，以及 callback 的 request、绝对
+HTTP/HTTPS URL 和 body 来源。执行参数的范围为：
+
+- 响应 `delayMs`：0～60,000 ms。
+- callback `delayMs`：0～3,600,000 ms。
+- callback `timeoutMs`：1～60,000 ms。
+- `retry.maxAttempts`：1～10。
+- `retry.intervalMs`：0～60,000 ms。
+
+超出范围或格式非法的定义不会进入活跃 catalog；热加载失败时继续使用上一版。
+
+## 原子热加载
+
+Mock Server 启动时会完整加载第一版 catalog；启动配置错误时直接终止，避免启动一个不可用的服务。运行期间，Mock 请求和 catalog 状态查询会触发检查，但至多每隔 `reloadIntervalMs` 执行一次：
+
+1. 读取并校验全部 Mock YAML。
+2. 解析当前环境、变量和密钥。
+3. 把 response、callback 引用的 `bodyFile` 一并读入不可变 catalog。
+4. 计算 SHA-256 指纹；内容确实变化且全部有效时，一次性替换当前 catalog。
+
+加载失败不会影响正在使用的版本。修正文件后下一次自动检查即可生效，也可以调用
+`POST /__testtools/reload` 立即重载。
 
 ## 请求验签和响应签名
 
@@ -109,5 +141,13 @@ afterResponse:
 - `GET /__testtools/health`
 - `GET /__testtools/calls`
 - `GET /__testtools/callbacks`
+- `GET /__testtools/catalog`：当前版本、Mock 数量、检查时间及最近加载错误
+- `POST /__testtools/reload`：立即尝试原子重载并返回 catalog 状态
 
 最近 100 条记录保存在内存；完成的回调写入 `test-workspace/results/callbacks/`。
+
+## 自动化集成测试
+
+`./mvnw verify` 使用 Maven Failsafe 启动随机端口的真实 Spring Boot 服务，验证 HTTP
+匹配、响应、响应完成后的 callback、调用记录和 catalog 管理接口。`*Test` 是快速单元测试，
+`*IT` 是需要完整应用上下文和本地端口的集成测试。

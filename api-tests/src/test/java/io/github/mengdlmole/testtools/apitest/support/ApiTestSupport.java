@@ -21,6 +21,7 @@ public abstract class ApiTestSupport {
     EnvironmentConfig environment = workspace().environment(environmentName);
     return ApiTestClient.builder(environment.baseUrl())
         .objectMapper(workspace().jsonMapper())
+        .maskSensitiveData(workspace().config().resolvedMaskSensitiveData())
         .build();
   }
 

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashMap;
@@ -198,8 +199,7 @@ public final class TestWorkspace {
 
   public synchronized Path writeResult(String relativePath, Object result) {
     try {
-      Path target = resolve("results").resolve(relativePath).normalize();
-      ensureInside(resolve("results"), target, "Invalid result path");
+      Path target = writableResultTarget(relativePath);
       writeAtomically(
           target, jsonMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(result));
       return target;
@@ -265,13 +265,80 @@ public final class TestWorkspace {
     }
   }
 
+  private Path writableResultTarget(String relativePath) throws IOException {
+    if (relativePath == null || relativePath.isBlank()) {
+      throw new IllegalArgumentException("Result path is required");
+    }
+    Path requested = Path.of(relativePath);
+    if (requested.isAbsolute()) {
+      throw new IllegalArgumentException("Result path must be relative");
+    }
+
+    Path realWorkspace = root.toRealPath();
+    Path results = resolve("results");
+    if (Files.exists(results, LinkOption.NOFOLLOW_LINKS)) {
+      rejectSymbolicLink(results, "Results directory must not be a symbolic link");
+      if (!Files.isDirectory(results, LinkOption.NOFOLLOW_LINKS)) {
+        throw new IllegalArgumentException("Results path must be a directory");
+      }
+    } else {
+      Files.createDirectory(results);
+    }
+
+    Path realResults = results.toRealPath();
+    ensureInside(realWorkspace, realResults, "Results directory must remain inside workspace");
+    Path normalized = realResults.resolve(requested).normalize();
+    ensureInside(realResults, normalized, "Invalid result path");
+    if (normalized.equals(realResults)) {
+      throw new IllegalArgumentException("Result path must name a file");
+    }
+
+    Path current = realResults;
+    Path parent = normalized.getParent();
+    Path relativeParent = realResults.relativize(parent);
+    for (Path segment : relativeParent) {
+      Path candidate = current.resolve(segment);
+      if (Files.exists(candidate, LinkOption.NOFOLLOW_LINKS)) {
+        rejectSymbolicLink(candidate, "Result directory must not be a symbolic link");
+        if (!Files.isDirectory(candidate, LinkOption.NOFOLLOW_LINKS)) {
+          throw new IllegalArgumentException("Result parent must be a directory: " + candidate);
+        }
+      } else {
+        Files.createDirectory(candidate);
+      }
+      current = candidate.toRealPath();
+      ensureInside(realResults, current, "Result directory must remain inside workspace");
+    }
+
+    Path target = current.resolve(normalized.getFileName());
+    if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+      rejectSymbolicLink(target, "Result file must not be a symbolic link");
+      ensureInside(realResults, target.toRealPath(), "Result file must remain inside workspace");
+    }
+    return target;
+  }
+
+  private static void rejectSymbolicLink(Path path, String message) {
+    if (Files.isSymbolicLink(path)) {
+      throw new IllegalArgumentException(message + ": " + path);
+    }
+  }
+
   private void writeAtomically(Path target, byte[] content) {
     try {
-      Files.createDirectories(target.getParent());
+      ensureInside(
+          root.toRealPath(),
+          target.getParent().toRealPath(),
+          "Result directory must remain inside workspace");
       Path temporary =
           Files.createTempFile(target.getParent(), target.getFileName().toString(), ".tmp");
       try {
         Files.write(temporary, content);
+        ensureInside(
+            root.toRealPath(),
+            target.getParent().toRealPath(),
+            "Result directory must remain inside workspace");
+        rejectSymbolicLink(target, "Result file must not be a symbolic link");
         try {
           Files.move(
               temporary,

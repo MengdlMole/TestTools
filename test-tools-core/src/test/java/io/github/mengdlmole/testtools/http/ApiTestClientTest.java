@@ -75,6 +75,27 @@ class ApiTestClientTest {
   }
 
   @Test
+  void canExplicitlyDisableMaskingForLocalDebugLogs() {
+    List<String> logs = new ArrayList<>();
+    ApiTestClient client =
+        ApiTestClient.builder("http://user:password@localhost")
+            .executor(new StubExecutor())
+            .logger(logs::add)
+            .maskSensitiveData(false)
+            .build();
+    ApiRequest request = client.get("/inspect");
+    request.query("token", "raw-token");
+    request.header("Authorization", "Bearer raw-token");
+
+    client.send(request);
+
+    String output = String.join("\n", logs);
+    org.junit.jupiter.api.Assertions.assertTrue(output.contains("user:password"));
+    org.junit.jupiter.api.Assertions.assertTrue(output.contains("Bearer raw-token"));
+    org.junit.jupiter.api.Assertions.assertTrue(output.contains("token=raw-token"));
+  }
+
+  @Test
   void rejectsEmptyResponseWhenJsonIsRequested() {
     ApiResponse response =
         new ApiResponse(new ResponseSnapshot(204, Map.of(), new byte[0], 1), new ObjectMapper());

@@ -9,11 +9,20 @@ import java.util.List;
 import java.util.Map;
 
 public class HttpExecutor {
+  private final boolean maskSensitiveData;
   private final HttpClient client =
       HttpClient.newBuilder()
           .connectTimeout(Duration.ofSeconds(10))
           .followRedirects(HttpClient.Redirect.NORMAL)
           .build();
+
+  public HttpExecutor() {
+    this(true);
+  }
+
+  public HttpExecutor(boolean maskSensitiveData) {
+    this.maskSensitiveData = maskSensitiveData;
+  }
 
   public Exchange execute(MutableRequest request) {
     return execute(request, Duration.ofSeconds(30));
@@ -46,16 +55,17 @@ public class HttpExecutor {
     } catch (InterruptedException error) {
       Thread.currentThread().interrupt();
       throw new HttpExecutionException(
-          "Request interrupted: "
-              + request.method()
-              + " "
-              + SensitiveDataMasker.maskUri(request.uri()),
-          error);
+          "Request interrupted: " + request.method() + " " + uriForMessage(request), error);
     } catch (Exception e) {
       throw new HttpExecutionException(
-          "Request failed: " + request.method() + " " + SensitiveDataMasker.maskUri(request.uri()),
-          e);
+          "Request failed: " + request.method() + " " + uriForMessage(request), e);
     }
+  }
+
+  private String uriForMessage(MutableRequest request) {
+    return maskSensitiveData
+        ? SensitiveDataMasker.maskUri(request.uri())
+        : request.uri().toString();
   }
 
   public record Exchange(RequestSnapshot request, ResponseSnapshot response) {}

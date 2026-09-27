@@ -28,19 +28,21 @@ public final class SensitiveDataMasker {
     if (uri == null) {
       return null;
     }
-    int queryStart = uri.indexOf('?');
+    String safeUri = maskUserInfo(uri);
+    int queryStart = safeUri.indexOf('?');
     if (queryStart < 0) {
-      return uri;
+      return safeUri;
     }
-    int fragmentStart = uri.indexOf('#', queryStart);
-    String query = uri.substring(queryStart + 1, fragmentStart < 0 ? uri.length() : fragmentStart);
+    int fragmentStart = safeUri.indexOf('#', queryStart);
+    String query =
+        safeUri.substring(queryStart + 1, fragmentStart < 0 ? safeUri.length() : fragmentStart);
     String masked =
         Arrays.stream(query.split("&", -1))
             .map(SensitiveDataMasker::maskQueryPart)
             .collect(Collectors.joining("&"));
-    return uri.substring(0, queryStart + 1)
+    return safeUri.substring(0, queryStart + 1)
         + masked
-        + (fragmentStart < 0 ? "" : uri.substring(fragmentStart));
+        + (fragmentStart < 0 ? "" : safeUri.substring(fragmentStart));
   }
 
   public static boolean isSensitiveName(String name) {
@@ -60,6 +62,30 @@ public final class SensitiveDataMasker {
     int separator = item.indexOf('=');
     String name = separator < 0 ? item : item.substring(0, separator);
     return isSensitiveName(name) && separator >= 0 ? name + "=***" : item;
+  }
+
+  private static String maskUserInfo(String uri) {
+    int authorityStart;
+    int scheme = uri.indexOf("://");
+    if (scheme >= 0) {
+      authorityStart = scheme + 3;
+    } else if (uri.startsWith("//")) {
+      authorityStart = 2;
+    } else {
+      return uri;
+    }
+    int authorityEnd = uri.length();
+    for (char delimiter : new char[] {'/', '?', '#'}) {
+      int position = uri.indexOf(delimiter, authorityStart);
+      if (position >= 0) {
+        authorityEnd = Math.min(authorityEnd, position);
+      }
+    }
+    int separator = uri.lastIndexOf('@', authorityEnd - 1);
+    if (separator < authorityStart) {
+      return uri;
+    }
+    return uri.substring(0, authorityStart) + "***@" + uri.substring(separator + 1);
   }
 
   private static String decode(String value) {

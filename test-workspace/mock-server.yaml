@@ -1,1 +1,3 @@
 port: 19090
+reloadIntervalMs: 500
+maskSensitiveData: true

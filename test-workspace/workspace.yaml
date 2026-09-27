@@ -1,4 +1,5 @@
 defaultEnvironment: local
+maskSensitiveData: true
 
 variables:
   clientName: local-test-tools

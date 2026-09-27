@@ -34,8 +34,8 @@ mock/
 ├── MockServerApplication.java       Spring Boot 入口和基础 Bean
 ├── admin/                           健康检查、调用与回调记录
 ├── callback/                        响应完成后的异步回调
-├── config/                          Mock 配置及工作区视图
-├── engine/                          请求匹配和响应生成
+├── config/                          工作区加载、不可变 catalog 和原子切换
+├── engine/                          与 Servlet 无关的请求匹配和响应生成
 ├── model/                           YAML 定义模型
 └── web/                             HTTP 控制器和异常响应
 ```
@@ -43,6 +43,10 @@ mock/
 这里不设 `common` 包：需要命名为 `common` 的类通常还没有找到明确职责。具体接口 Mock
 以 YAML 形式放在 `test-workspace/mocks/cases/<业务域>`；工具自身示例放在
 `test-workspace/mocks/examples`。两者由 Mock Server 递归加载，但目录语义不可混用。
+
+Web 层只负责把 Servlet 请求转换为 `MockRequest`、执行响应延迟和记录调用；
+`HttpMockEngine` 只消费框架无关请求与一份不可变 `MockCatalog`。Catalog 包含定义、环境、
+密钥及被引用文件，候选版本完整校验成功后才由 `MockDefinitionRepository` 原子替换。
 
 ## 包和类型命名
 
@@ -60,8 +64,8 @@ mock/
 
 ## 工作区配置边界
 
-- `workspace.yaml`：所有模块共享的默认环境和变量。
-- `mock-server.yaml`：仅 Mock Server 使用的端口等配置。
+- `workspace.yaml`：所有模块共享的默认环境、变量，以及 JUnit API 日志脱敏开关。
+- `mock-server.yaml`：仅 Mock Server 使用的端口、热加载间隔和调用记录脱敏开关。
 - `environments/`、`secrets/`：调用侧和 Mock 侧可共享。
 - `fixtures/api-tests/global/`：多个 JUnit API 测试类共享的 JSON。
 - `fixtures/api-tests/cases/<case>/`：一个测试类或关联场景拥有的 JSON。

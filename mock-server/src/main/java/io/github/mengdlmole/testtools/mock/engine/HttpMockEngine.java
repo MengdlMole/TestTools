@@ -3,76 +3,66 @@ package io.github.mengdlmole.testtools.mock.engine;
 import static io.github.mengdlmole.testtools.http.HttpHeaderSupport.putIfAbsentIgnoreCase;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.mengdlmole.testtools.http.transport.MutableResponse;
 import io.github.mengdlmole.testtools.http.transport.RequestSnapshot;
-import io.github.mengdlmole.testtools.mock.admin.MockCallStore;
 import io.github.mengdlmole.testtools.mock.callback.CallbackTask;
-import io.github.mengdlmole.testtools.mock.config.MockWorkspace;
+import io.github.mengdlmole.testtools.mock.config.MockCatalog;
+import io.github.mengdlmole.testtools.mock.config.MockCatalog.LoadedMock;
+import io.github.mengdlmole.testtools.mock.config.MockDefinitionRepository;
 import io.github.mengdlmole.testtools.mock.model.MockDefinition;
 import io.github.mengdlmole.testtools.security.HttpSecurityHandler;
 import io.github.mengdlmole.testtools.security.SecurityHandlerRegistry;
 import io.github.mengdlmole.testtools.security.SignContext;
 import io.github.mengdlmole.testtools.security.VerificationResult;
-import io.github.mengdlmole.testtools.workspace.EnvironmentContext;
-import io.github.mengdlmole.testtools.workspace.TestWorkspace;
 import io.github.mengdlmole.testtools.workspace.VariableResolver;
-import io.github.mengdlmole.testtools.workspace.WorkspaceConfig;
-import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
-import java.util.Enumeration;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
-import org.springframework.stereotype.Component;
 
-@Component
+/**
+ * Matches a framework-neutral request against one immutable Mock catalog.
+ */
 public final class HttpMockEngine {
-  private final MockWorkspace mockWorkspace;
-  private final TestWorkspace workspace;
+  private final MockDefinitionRepository definitions;
   private final SecurityHandlerRegistry handlers;
   private final VariableResolver variables;
-  private final MockCallStore calls;
+  private final ObjectMapper jsonMapper;
 
   public HttpMockEngine(
-      MockWorkspace mockWorkspace,
+      MockDefinitionRepository definitions,
       SecurityHandlerRegistry handlers,
       VariableResolver variables,
-      MockCallStore calls) {
-    this.mockWorkspace = mockWorkspace;
-    this.workspace = mockWorkspace.files();
+      ObjectMapper jsonMapper) {
+    this.definitions = definitions;
     this.handlers = handlers;
     this.variables = variables;
-    this.calls = calls;
+    this.jsonMapper = jsonMapper;
   }
 
-  public MockExchange execute(HttpServletRequest servletRequest, byte[] requestBody) {
-    RequestSnapshot request = snapshot(servletRequest, requestBody);
-    MockDefinition mock =
-        mockWorkspace.definitions().stream()
-            .filter(item -> !Boolean.FALSE.equals(item.enabled()))
-            .filter(item -> matches(item, servletRequest, request))
+  public MockExchange execute(MockRequest incoming) {
+    RequestSnapshot request = incoming.snapshot();
+    MockCatalog catalog = definitions.current();
+    LoadedMock loaded =
+        catalog.definitions().stream()
+            .filter(item -> !Boolean.FALSE.equals(item.definition().enabled()))
+            .filter(item -> matches(item.definition(), incoming))
             .findFirst()
             .orElse(null);
-    if (mock == null) {
-      return result(request, 404, "No mock matched", jsonError("No mock matched"), List.of());
-    }
-    if (mock.response() == null) {
-      throw new IllegalArgumentException("Mock '" + mock.name() + "' must define response");
+    if (loaded == null) {
+      return result(404, "No mock matched", jsonError("No mock matched"));
     }
 
-    SignContext context = signContext();
+    MockDefinition mock = loaded.definition();
+    SignContext context = catalog.signContext();
     HttpSecurityHandler handler = handlers.byId(text(mock.securityHandler(), "none"));
     VerificationResult verification = handler.verifyMockRequest(context, request);
     if (!verification.success()) {
-      return result(request, 401, mock.name(), jsonError(verification.message()), List.of());
+      return result(401, mock.name(), jsonError(verification.message()));
     }
 
-    delay(mock.response().delayMs());
-    byte[] body = responseBody(mock, request, context.variables());
+    byte[] body = responseBody(loaded, request, context.variables());
     MutableResponse response = new MutableResponse(status(mock), mock.response().headers(), body);
     if (mock.response().body() != null) {
       putIfAbsentIgnoreCase(response.headers(), "Content-Type", "application/json");
@@ -80,55 +70,50 @@ public final class HttpMockEngine {
     handler.signMockResponse(context, request, response);
 
     List<CallbackTask> callbacks =
-        mock.afterResponse() == null
-            ? List.of()
-            : mock.afterResponse().stream()
-                .map(definition -> new CallbackTask(mock.name(), definition, request, context))
-                .toList();
-    calls.record(request.method(), request.uri().toString(), response.status(), mock.name());
-    return new MockExchange(response, callbacks);
+        loaded.callbacks().stream()
+            .map(
+                callback ->
+                    new CallbackTask(
+                        mock.name(), callback.definition(), callback.bodyFile(), request, context))
+            .toList();
+    long delayMs = mock.response().delayMs() == null ? 0 : Math.max(0, mock.response().delayMs());
+    return new MockExchange(response, callbacks, mock.name(), delayMs);
   }
 
-  private MockExchange result(
-      RequestSnapshot request,
-      int status,
-      String matched,
-      byte[] body,
-      List<CallbackTask> callbacks) {
-    calls.record(request.method(), request.uri().toString(), status, matched);
+  private MockExchange result(int status, String matched, byte[] body) {
     return new MockExchange(
-        new MutableResponse(status, Map.of("Content-Type", "application/json"), body), callbacks);
+        new MutableResponse(status, Map.of("Content-Type", "application/json"), body),
+        List.of(),
+        matched,
+        0);
   }
 
-  private boolean matches(
-      MockDefinition mock, HttpServletRequest servletRequest, RequestSnapshot request) {
-    if (mock.request() == null) {
-      return false;
-    }
+  private boolean matches(MockDefinition mock, MockRequest request) {
+    RequestSnapshot snapshot = request.snapshot();
     if (mock.request().method() != null
-        && !mock.request().method().equalsIgnoreCase(request.method())) {
+        && !mock.request().method().equalsIgnoreCase(snapshot.method())) {
       return false;
     }
-    if (mock.request().path() != null && !mock.request().path().equals(request.uri().getPath())) {
+    if (!mock.request().path().equals(snapshot.uri().getPath())) {
       return false;
     }
     if (mock.request().query() != null) {
       for (var entry : mock.request().query().entrySet()) {
-        if (!entry.getValue().equals(servletRequest.getParameter(entry.getKey()))) {
+        if (!entry.getValue().equals(request.firstQuery(entry.getKey()))) {
           return false;
         }
       }
     }
     if (mock.request().headers() != null) {
       for (var entry : mock.request().headers().entrySet()) {
-        if (!entry.getValue().equals(request.firstHeader(entry.getKey()))) {
+        if (!entry.getValue().equals(snapshot.firstHeader(entry.getKey()))) {
           return false;
         }
       }
     }
     if (mock.request().body() != null) {
       try {
-        JsonNode actual = workspace.jsonMapper().readTree(request.body());
+        JsonNode actual = jsonMapper.readTree(snapshot.body());
         if (!mock.request().body().equals(actual)) {
           return false;
         }
@@ -139,66 +124,20 @@ public final class HttpMockEngine {
     return true;
   }
 
-  private RequestSnapshot snapshot(HttpServletRequest request, byte[] body) {
-    Map<String, List<String>> headers = new LinkedHashMap<>();
-    Enumeration<String> names = request.getHeaderNames();
-    if (names != null) {
-      while (names.hasMoreElements()) {
-        String name = names.nextElement();
-        headers.put(name, Collections.list(request.getHeaders(name)));
-      }
-    }
-    String uri = request.getRequestURI();
-    if (request.getQueryString() != null) {
-      uri += "?" + request.getQueryString();
-    }
-    return new RequestSnapshot(
-        request.getMethod(), URI.create(uri), headers, body == null ? new byte[0] : body);
-  }
-
   private byte[] responseBody(
-      MockDefinition mock, RequestSnapshot request, Map<String, String> baseVariables) {
+      LoadedMock loaded, RequestSnapshot request, Map<String, String> baseVariables) {
+    MockDefinition mock = loaded.definition();
     try {
-      Map<String, String> values = requestVariables(request, baseVariables);
+      Map<String, String> values = MockRequestVariables.create(request, baseVariables);
       if (mock.response().bodyFile() != null) {
         return variables
-            .resolve(
-                new String(workspace.fileBytes(mock.response().bodyFile()), StandardCharsets.UTF_8),
-                values)
+            .resolve(new String(loaded.responseBodyFile(), StandardCharsets.UTF_8), values)
             .getBytes(StandardCharsets.UTF_8);
       }
       JsonNode resolved = variables.resolve(mock.response().body(), values);
-      return resolved == null ? new byte[0] : workspace.jsonMapper().writeValueAsBytes(resolved);
+      return resolved == null ? new byte[0] : jsonMapper.writeValueAsBytes(resolved);
     } catch (IOException error) {
       throw new IllegalArgumentException("Cannot create response for mock " + mock.name(), error);
-    }
-  }
-
-  public static Map<String, String> requestVariables(
-      RequestSnapshot request, Map<String, String> baseVariables) {
-    Map<String, String> values = new LinkedHashMap<>(baseVariables);
-    values.put("request.body", request.bodyText());
-    values.put("request.method", request.method());
-    values.put("request.path", request.uri().getPath());
-    values.put("random.uuid", UUID.randomUUID().toString());
-    return values;
-  }
-
-  private SignContext signContext() {
-    WorkspaceConfig config = workspace.config();
-    EnvironmentContext context = workspace.environmentContext(config.defaultEnvironment());
-    return new SignContext(context.variables(), context.secrets());
-  }
-
-  private void delay(Long delayMs) {
-    if (delayMs == null || delayMs <= 0) {
-      return;
-    }
-    try {
-      Thread.sleep(delayMs);
-    } catch (InterruptedException error) {
-      Thread.currentThread().interrupt();
-      throw new IllegalStateException("Mock response delay interrupted", error);
     }
   }
 
@@ -208,9 +147,8 @@ public final class HttpMockEngine {
 
   private byte[] jsonError(String message) {
     try {
-      return workspace
-          .jsonMapper()
-          .writeValueAsBytes(Map.of("error", message == null ? "unknown error" : message));
+      return jsonMapper.writeValueAsBytes(
+          Map.of("error", message == null ? "unknown error" : message));
     } catch (IOException impossible) {
       return "{\"error\":\"unknown error\"}".getBytes(StandardCharsets.UTF_8);
     }

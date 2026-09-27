@@ -27,15 +27,18 @@ public final class ApiTestClient {
   private final HttpExecutor executor;
   private final Consumer<String> logger;
   private final int bodyLogLimit;
+  private final boolean maskSensitiveData;
 
   private ApiTestClient(Builder builder) {
     baseUrl = builder.baseUrl.trim();
     defaultHeaders = Map.copyOf(builder.defaultHeaders);
     defaultTimeout = builder.timeout;
     mapper = builder.mapper;
-    executor = builder.executor;
+    executor =
+        builder.executor == null ? new HttpExecutor(builder.maskSensitiveData) : builder.executor;
     logger = builder.logger;
     bodyLogLimit = builder.bodyLogLimit;
+    maskSensitiveData = builder.maskSensitiveData;
   }
 
   /**
@@ -119,9 +122,9 @@ public final class ApiTestClient {
     Objects.requireNonNull(request, "request must not be null");
     MutableRequest httpRequest = request.toMutableRequest();
 
-    log("--> " + httpRequest.method() + " " + SensitiveDataMasker.maskUri(httpRequest.uri()));
+    log("--> " + httpRequest.method() + " " + uriForLog(httpRequest.uri()));
     if (!httpRequest.headers().isEmpty()) {
-      log("    request headers: " + SensitiveDataMasker.maskHeaders(httpRequest.headers()));
+      log("    request headers: " + headersForLog(httpRequest.headers()));
     }
     if (httpRequest.body().length > 0) {
       log("    request body   : " + bodyForLog(httpRequest.bodyText()));
@@ -135,9 +138,7 @@ public final class ApiTestClient {
             + exchange.response().durationMs()
             + " ms)");
     if (!exchange.response().headers().isEmpty()) {
-      log(
-          "    response headers: "
-              + SensitiveDataMasker.maskHeaders(flatten(exchange.response().headers())));
+      log("    response headers: " + headersForLog(flatten(exchange.response().headers())));
     }
     if (exchange.response().body().length > 0) {
       log("    response body   : " + bodyForLog(exchange.response().bodyText()));
@@ -153,9 +154,10 @@ public final class ApiTestClient {
     private final Map<String, String> defaultHeaders = new LinkedHashMap<>();
     private Duration timeout = Duration.ofSeconds(30);
     private ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
-    private HttpExecutor executor = new HttpExecutor();
+    private HttpExecutor executor;
     private Consumer<String> logger = System.out::println;
     private int bodyLogLimit = Integer.getInteger("testtools.logBodyLimit", 4000);
+    private boolean maskSensitiveData = true;
 
     private Builder(String baseUrl) {
       if (baseUrl == null || baseUrl.isBlank()) {
@@ -234,6 +236,17 @@ public final class ApiTestClient {
     }
 
     /**
+     * Controls masking of credentials, sensitive headers, and query parameters in local logs.
+     *
+     * @param enabled {@code true} to mask sensitive data; {@code false} to log raw values
+     * @return this builder
+     */
+    public Builder maskSensitiveData(boolean enabled) {
+      maskSensitiveData = enabled;
+      return this;
+    }
+
+    /**
      * Creates an immutable client configuration.
      *
      * @return configured client
@@ -260,6 +273,14 @@ public final class ApiTestClient {
 
   private void log(String value) {
     logger.accept(value);
+  }
+
+  private String uriForLog(URI uri) {
+    return maskSensitiveData ? SensitiveDataMasker.maskUri(uri) : uri.toString();
+  }
+
+  private Map<String, String> headersForLog(Map<String, String> headers) {
+    return maskSensitiveData ? SensitiveDataMasker.maskHeaders(headers) : headers;
   }
 
   private static Map<String, String> flatten(Map<String, List<String>> headers) {

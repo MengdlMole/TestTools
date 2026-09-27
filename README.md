@@ -232,13 +232,19 @@ response:
       status: CREATED
 ```
 
-Mock Server 会递归读取 `mocks/`，每次请求都会重新加载配置，修改 YAML 后通常不需要重启。`mocks/examples/` 是工具自带示例，`mocks/cases/<业务域>/` 才放项目实际使用的接口测试桩。可配置 query、Header、JSON body 匹配、响应文件、验签、延迟和 `afterResponse` 回调。完整字段及示例见 [Mock Server 指南](docs/mock-server.md)。
+Mock Server 会递归读取 `mocks/` 并自动热加载，修改 YAML 后不需要重启。新配置只有在所有 YAML、环境、密钥及引用文件都加载并校验成功后才会原子切换；配置写到一半或存在错误时，正在运行的服务继续使用上一版本。`mocks/examples/` 是工具自带示例，`mocks/cases/<业务域>/` 才放项目实际使用的接口测试桩。可配置 query、Header、JSON body 匹配、响应文件、验签、延迟和 `afterResponse` 回调。完整字段及示例见 [Mock Server 指南](docs/mock-server.md)。
 
 Mock 端口属于 Mock 模块，配置在 `test-workspace/mock-server.yaml`：
 
 ```yaml
 port: 19090
+reloadIntervalMs: 500
+maskSensitiveData: true
 ```
+
+`workspace.yaml` 中同名的 `maskSensitiveData` 控制 JUnit API 请求日志；
+`mock-server.yaml` 中的配置控制 `/__testtools/calls` 保存的 URI。两者默认均为 `true`，会隐藏
+URI 用户名/密码、敏感 query 和敏感 Header。本地排查签名时可显式设为 `false` 查看原值，排查后建议恢复。
 
 ## 工作区目录
 
@@ -273,7 +279,10 @@ test-workspace/
 
 ```bash
 ./mvnw clean test
-./mvnw package
+./mvnw verify
 
 java -jar mock-server/target/mock-server.jar --workspace test-workspace
 ```
+
+`verify` 除了单元测试、Spotless 和 Checkstyle，还会通过随机本地端口执行 Mock Server
+HTTP、callback 和管理接口集成测试。

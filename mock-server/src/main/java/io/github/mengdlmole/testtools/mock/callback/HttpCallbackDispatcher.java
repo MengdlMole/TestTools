@@ -5,7 +5,7 @@ import static io.github.mengdlmole.testtools.http.HttpHeaderSupport.putIfAbsentI
 import com.fasterxml.jackson.databind.JsonNode;
 import io.github.mengdlmole.testtools.http.transport.HttpExecutor;
 import io.github.mengdlmole.testtools.http.transport.MutableRequest;
-import io.github.mengdlmole.testtools.mock.engine.HttpMockEngine;
+import io.github.mengdlmole.testtools.mock.engine.MockRequestVariables;
 import io.github.mengdlmole.testtools.mock.model.MockDefinition.AfterResponse;
 import io.github.mengdlmole.testtools.mock.model.MockDefinition.CallbackRequest;
 import io.github.mengdlmole.testtools.mock.model.MockDefinition.Retry;
@@ -180,7 +180,7 @@ public final class HttpCallbackDispatcher {
       throws Exception {
     CallbackRequest definition = task.definition().request();
     Map<String, String> values =
-        HttpMockEngine.requestVariables(task.originalRequest(), task.signContext().variables());
+        MockRequestVariables.create(task.originalRequest(), task.signContext().variables());
     values.put("mock.name", task.mockName());
     values.put("callback.id", callbackId);
     SignContext context = new SignContext(values, task.signContext().secrets());
@@ -192,7 +192,7 @@ public final class HttpCallbackDispatcher {
           .headers()
           .forEach((key, value) -> headers.put(key, variables.resolve(value, values)));
     }
-    byte[] body = callbackBody(definition, values);
+    byte[] body = callbackBody(task, values);
     if (definition.body() != null) {
       putIfAbsentIgnoreCase(headers, "Content-Type", "application/json");
     }
@@ -214,12 +214,11 @@ public final class HttpCallbackDispatcher {
     return new AttemptResult(success, exchange.response().status(), error);
   }
 
-  private byte[] callbackBody(CallbackRequest request, Map<String, String> values)
-      throws Exception {
+  private byte[] callbackBody(CallbackTask task, Map<String, String> values) throws Exception {
+    CallbackRequest request = task.definition().request();
     if (request.bodyFile() != null) {
       return variables
-          .resolve(
-              new String(workspace.fileBytes(request.bodyFile()), StandardCharsets.UTF_8), values)
+          .resolve(new String(task.bodyFile(), StandardCharsets.UTF_8), values)
           .getBytes(StandardCharsets.UTF_8);
     }
     JsonNode body = variables.resolve(request.body(), values);

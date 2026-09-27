@@ -20,6 +20,12 @@
 
 调用 `GET /__testtools/callbacks`，检查状态、尝试次数和错误；完成记录位于 `results/callbacks/`。
 
+## 修改 Mock 后没有生效
+
+调用 `GET /__testtools/catalog` 查看 `lastError`。热加载失败时服务会保留上一份有效
+catalog，不会让已有接口中断。修正错误后等待下一次请求触发检查，或调用
+`POST /__testtools/reload` 立即重载。
+
 ## Mock YAML 加载失败
 
 Mock YAML 使用严格字段检查和基础结构校验，拼错字段、缺少 request path 或同时配置多个 body 来源都会直接失败。检查缩进、字段名称、环境、密钥引用、签名处理器 ID 和 fixture 路径。

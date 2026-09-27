@@ -7,5 +7,15 @@ import io.github.mengdlmole.testtools.security.SignContext;
 public record CallbackTask(
     String mockName,
     AfterResponse definition,
+    byte[] bodyFile,
     RequestSnapshot originalRequest,
-    SignContext signContext) {}
+    SignContext signContext) {
+  public CallbackTask {
+    bodyFile = bodyFile == null ? null : bodyFile.clone();
+  }
+
+  @Override
+  public byte[] bodyFile() {
+    return bodyFile == null ? null : bodyFile.clone();
+  }
+}

@@ -7,5 +7,11 @@ import java.util.Map;
  *
  * @param defaultEnvironment environment selected when a runner does not specify one
  * @param variables workspace-level variables
+ * @param maskSensitiveData whether API-test logs hide credentials and sensitive headers
  */
-public record WorkspaceConfig(String defaultEnvironment, Map<String, String> variables) {}
+public record WorkspaceConfig(
+    String defaultEnvironment, Map<String, String> variables, Boolean maskSensitiveData) {
+  public boolean resolvedMaskSensitiveData() {
+    return maskSensitiveData == null || maskSensitiveData;
+  }
+}
