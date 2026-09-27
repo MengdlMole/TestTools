@@ -2,7 +2,9 @@ package io.github.mengdlmole.testtools.workspace;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -41,7 +43,8 @@ class TestWorkspaceTest {
   void recursiveYamlListingIgnoresSymbolicLinks(@TempDir Path outside) throws Exception {
     Files.createDirectories(root.resolve("mocks"));
     Files.writeString(outside.resolve("outside.yaml"), "name: outside\n");
-    Files.createSymbolicLink(root.resolve("mocks/outside.yaml"), outside.resolve("outside.yaml"));
+    createSymbolicLinkIfSupported(
+        root.resolve("mocks/outside.yaml"), outside.resolve("outside.yaml"));
 
     assertEquals(java.util.List.of(), new TestWorkspace(root).listYamlFiles("mocks"));
   }
@@ -84,7 +87,7 @@ class TestWorkspaceTest {
       throws Exception {
     Files.writeString(outside.resolve("request.json"), "{}");
     Files.createDirectories(root.resolve("fixtures/api-tests"));
-    Files.createSymbolicLink(root.resolve("fixtures/api-tests/global"), outside);
+    createSymbolicLinkIfSupported(root.resolve("fixtures/api-tests/global"), outside);
 
     assertThrows(
         IllegalArgumentException.class,
@@ -95,7 +98,7 @@ class TestWorkspaceTest {
   void rejectsBodyFileSymlinkedOutsideWorkspace(@TempDir Path outside) throws Exception {
     Files.writeString(outside.resolve("secret.txt"), "outside workspace");
     Files.createDirectories(root.resolve("fixtures"));
-    Files.createSymbolicLink(
+    createSymbolicLinkIfSupported(
         root.resolve("fixtures/external-secret.txt"), outside.resolve("secret.txt"));
 
     TestWorkspace workspace = new TestWorkspace(root);
@@ -116,7 +119,7 @@ class TestWorkspaceTest {
 
   @Test
   void rejectsResultsDirectorySymlinkedOutsideWorkspace(@TempDir Path outside) throws Exception {
-    Files.createSymbolicLink(root.resolve("results"), outside);
+    createSymbolicLinkIfSupported(root.resolve("results"), outside);
 
     assertThrows(
         IllegalArgumentException.class,
@@ -126,7 +129,7 @@ class TestWorkspaceTest {
   @Test
   void rejectsResultParentSymlinkedOutsideWorkspace(@TempDir Path outside) throws Exception {
     Files.createDirectories(root.resolve("results"));
-    Files.createSymbolicLink(root.resolve("results/orders"), outside);
+    createSymbolicLinkIfSupported(root.resolve("results/orders"), outside);
 
     assertThrows(
         IllegalArgumentException.class,
@@ -137,7 +140,8 @@ class TestWorkspaceTest {
   void rejectsExistingResultFileSymlink(@TempDir Path outside) throws Exception {
     Files.createDirectories(root.resolve("results"));
     Files.writeString(outside.resolve("captured.json"), "original");
-    Files.createSymbolicLink(root.resolve("results/result.json"), outside.resolve("captured.json"));
+    createSymbolicLinkIfSupported(
+        root.resolve("results/result.json"), outside.resolve("captured.json"));
 
     assertThrows(
         IllegalArgumentException.class,
@@ -202,6 +206,14 @@ class TestWorkspaceTest {
       } else {
         System.setProperty("testtools.workspace", previous);
       }
+    }
+  }
+
+  private static void createSymbolicLinkIfSupported(Path link, Path target) throws IOException {
+    try {
+      Files.createSymbolicLink(link, target);
+    } catch (UnsupportedOperationException | IOException error) {
+      assumeTrue(false, "Symbolic links are not supported on this platform: " + error.getMessage());
     }
   }
 
